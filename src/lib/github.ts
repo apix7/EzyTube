@@ -286,9 +286,11 @@ jobs:
                 
                 # Rename parts to .zip extension
                 part_num=1
-                for part in \${base}part*; do
-                  mv "\$part" "\${base}part\$(printf '%02d' \$part_num).zip"
-                  part_num=\$((part_num + 1))
+                for part in "\${base}part"*; do
+                  if [ -f "\$part" ]; then
+                    mv "\$part" "\${base}part\$(printf '%02d' \$part_num).zip"
+                    part_num=\$((part_num + 1))
+                  fi
                 done
                 
                 # Count parts
