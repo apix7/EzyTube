@@ -202,11 +202,12 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
       const chunks: ArrayBuffer[] = [];
       for (const part of parts) {
         console.log('Downloading:', part.name, 'size:', part.size);
-        // Use raw URL with authentication for large files
-        const rawUrl = `https://raw.githubusercontent.com/${config.owner}/${config.repo}/main/${part.path}`;
-        const response = await fetch(rawUrl, {
+        // Use GitHub API with raw media type to avoid CORS
+        const apiUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${part.path}`;
+        const response = await fetch(apiUrl, {
           headers: {
             'Authorization': `token ${config.token}`,
+            'Accept': 'application/vnd.github.v3.raw',
           },
         });
         
