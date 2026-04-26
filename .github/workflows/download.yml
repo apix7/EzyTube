@@ -90,6 +90,11 @@ jobs:
           esac
           
           # Build format options
+          COOKIE_OPT=""
+          if [ -f "cookies.txt" ]; then
+            COOKIE_OPT="--cookies cookies.txt"
+          fi
+          
           if [ "$FORMAT" = "mp3" ] || [ "$QUALITY" = "audio" ]; then
             # Audio-only download
             OUTPUT_TEMPLATE="downloads/%(title)s.%(ext)s"
@@ -103,6 +108,7 @@ jobs:
               --write-thumbnail \
               --convert-thumbnails jpg \
               --embed-thumbnail \
+              $COOKIE_OPT \
               "$URL"
           else
             # Video download
@@ -114,6 +120,7 @@ jobs:
               --write-info-json \
               --write-thumbnail \
               --convert-thumbnails jpg \
+              $COOKIE_OPT \
               "$URL"
           fi
           
