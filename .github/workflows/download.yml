@@ -104,18 +104,18 @@ jobs:
               --convert-thumbnails jpg \
               --embed-thumbnail \
               "$URL"
-            else
-              # Video download
-              OUTPUT_TEMPLATE="downloads/%(title)s.%(ext)s"
-              yt-dlp \
-                --format "$QUALITY_OPT" \
-                --merge-output-format "$FORMAT" \
-                --output "$OUTPUT_TEMPLATE" \
-                --write-info-json \
-                --write-thumbnail \
-                --convert-thumbnails jpg \
-                "$URL"
-            fi
+          else
+            # Video download
+            OUTPUT_TEMPLATE="downloads/%(title)s.%(ext)s"
+            yt-dlp \
+              --format "$QUALITY_OPT" \
+              --merge-output-format "$FORMAT" \
+              --output "$OUTPUT_TEMPLATE" \
+              --write-info-json \
+              --write-thumbnail \
+              --convert-thumbnails jpg \
+              "$URL"
+          fi
           
           echo "Download complete"
           
