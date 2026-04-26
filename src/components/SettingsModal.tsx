@@ -221,11 +221,27 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               {fa.settings.bookmarklet}:
             </div>
             <a
-              href="javascript:(function(){const cd=new Date();const e=Math.floor(cd.getTime()/1000)+86400*7;let o='# Netscape HTTP Cookie File\\n# https://curl.se/rfc/cookie_spec.html\\n# This is a generated file! Do not edit.\\n\\n';const c=document.cookie.split('; ');for(let i=0;i<c.length;i++){const p=c[i].indexOf('=');if(p>0){const n=c[i].substring(0,p);const v=c[i].substring(p+1);if(n&&v){o+='#HttpOnly_.youtube.com\\tTRUE\\t/\\tTRUE\\t'+e+'\\t'+n+'\\t'+encodeURIComponent(v)+'\\n';}}}navigator.clipboard.writeText(o);alert('YouTube cookies copied! Now paste in CNS Settings.');})();"
+              href="javascript:(function(){const cd=new Date();const e=Math.floor(cd.getTime()/1000)+86400*7;let o='# Netscape HTTP Cookie File\n# https://curl.se/rfc/cookie_spec.html\n# This is a generated file! Do not edit.\n\n';const c=document.cookie.split('; ');for(let i=0;i<c.length;i++){const p=c[i].indexOf('=');if(p>0){const n=c[i].substring(0,p);const v=c[i].substring(p+1);if(n&&v){o+='#HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t'+e+'\t'+n+'\t'+encodeURIComponent(v)+'\n';}}}navigator.clipboard.writeText(o);alert('YouTube cookies copied! Now paste in CNS Settings.');})();"
               className="inline-block system-btn py-1 px-2 text-[10px] no-underline cursor-move"
               title="Drag to bookmarks bar"
             >
               {fa.settings.bookmarkletCode}
+            </a>
+            <div className="text-[9px] text-cns-warning">
+              {fa.settings.bookmarkletWarn}
+            </div>
+            
+            {/* Extension Method */}
+            <div className="text-[10px] text-cns-deep pt-2">
+              {fa.settings.extensionMethod}:
+            </div>
+            <a
+              href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbllbjkjfnlpehkmcjnikdf"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block system-btn py-1 px-2 text-[10px] no-underline border-cns-highlight text-cns-highlight"
+            >
+              {fa.settings.extensionLink}
             </a>
             
             {/* Cookies textarea */}
