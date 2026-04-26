@@ -469,6 +469,56 @@ class GitHubClient {
     
     return config;
   }
+
+  // Cookies management
+  getCookies(): string | null {
+    return localStorage.getItem('cns_cookies');
+  }
+
+  clearCookies(): void {
+    localStorage.removeItem('cns_cookies');
+  }
+
+  async uploadCookies(cookiesContent: string): Promise<void> {
+    const config = this.getConfig();
+    if (!config) throw new Error('GitHub config not set');
+
+    const content = btoa(cookiesContent);
+    const path = 'cookies.txt';
+    
+    // Check if file exists to get SHA
+    let sha: string | undefined;
+    try {
+      const existing = await this.request(
+        `/repos/${config.owner}/${config.repo}/contents/${path}`
+      );
+      sha = existing.sha;
+    } catch {
+      // File doesn't exist, will create new
+    }
+
+    const body: Record<string, string> = {
+      message: 'CNS: Update cookies',
+      content,
+    };
+    if (sha) body.sha = sha;
+
+    const response = await fetch(`${API_BASE}/repos/${config.owner}/${config.repo}/contents/${path}`, {
+      method: 'PUT',
+      headers: {
+        'Accept': 'application/vnd.github.v3+json',
+        'Authorization': `token ${config.token}`,
+        'Content-Type': 'application/json',
+        'User-Agent': 'CNS-YouTube-Downloader',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || `Failed to upload cookies: HTTP ${response.status}`);
+    }
+  }
 }
 
 export const github = new GitHubClient();

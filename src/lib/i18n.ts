@@ -57,6 +57,13 @@ export const fa = {
     manualSetup: 'یا پیکربندی دستی',
     creatingRepo: 'ایجاد مخزن...',
     addingWorkflow: 'افزودن workflow...',
+    cookies: 'کوکی‌های یوتیوب',
+    cookiesDesc: 'برای دانلود از یوتیوب، کوکی‌ها لازم هستند',
+    cookiesWhy: 'یوتیوب دانلود بدون ورود را مسدود کرده است',
+    bookmarklet: 'کشیدن این دکمه به نوار نشانک‌ها',
+    bookmarkletCode: 'Export YT Cookies',
+    pasteCookies: 'کوکی‌ها را اینجا بچسبانید',
+    cookiesSaved: 'کوکی‌ها ذخیره شدند',
   },
   warnings: {
     tos: 'هشدار: استفاده صرفاً برای محتوای عمومی یا متعلق به خود شما. رعایت قوانین GitHub و حق نشر الزامی است.',
