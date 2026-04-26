@@ -41,6 +41,7 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
     try {
       const downloads = await github.getDownloads();
       const videoItems: ArchiveItem[] = [];
+      const processedBases = new Set<string>();
 
       for (const item of downloads) {
         if (item.type === 'file') {
@@ -50,6 +51,7 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
           const ext = item.name.split('.').pop()?.toLowerCase();
           const isVideo = ['mp4', 'webm', 'mkv', 'mov'].includes(ext || '');
           const isAudio = ['mp3', 'm4a', 'wav', 'ogg', 'flac'].includes(ext || '');
+          const isJson = ext === 'json';
 
           if (isVideo || isAudio) {
             const metaPath = item.path.replace(/\.[^/.]+$/, '.json');
@@ -72,6 +74,38 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
               type: isVideo ? 'video' : 'audio',
               metadata,
             });
+            processedBases.add(item.path.replace(/\.[^/.]+$/, ''));
+          } else if (isJson) {
+            // Check if this JSON is for a split file (original file was deleted)
+            try {
+              const metaContent = await github.getFileContent(item.path);
+              if (metaContent) {
+                const metadata = JSON.parse(metaContent.content);
+                if (metadata.split && metadata.parts) {
+                  const base = item.path.replace(/\.json$/, '');
+                  // Only add if we haven't already processed this base
+                  if (!processedBases.has(base)) {
+                    // Determine original extension from metadata or default to mp4
+                    const originalExt = metadata.ext || 'mp4';
+                    const isVideo = ['mp4', 'webm', 'mkv', 'mov'].includes(originalExt);
+                    const isAudio = ['mp3', 'm4a', 'wav', 'ogg', 'flac'].includes(originalExt);
+                    
+                    videoItems.push({
+                      name: `${base}.${originalExt}`,
+                      path: item.path,
+                      sha: item.sha,
+                      size: metadata.original_size || 0,
+                      download_url: null,
+                      type: isVideo ? 'video' : (isAudio ? 'audio' : 'video'),
+                      metadata,
+                    });
+                    processedBases.add(base);
+                  }
+                }
+              }
+            } catch {
+              // Not a valid metadata file
+            }
           }
         }
       }
