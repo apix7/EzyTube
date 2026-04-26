@@ -80,7 +80,7 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
                     metadata.thumbnail = thumbFile.download_url.split('?')[0];
                     console.log('Using download_url:', metadata.thumbnail);
                   } else {
-                    // Fallback: fetch via GitHub API with raw media type
+                    // Fallback: fetch via GitHub API and convert to base64 data URL
                     const config = github.getConfig();
                     if (config) {
                       const apiUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/downloads/${encodeURIComponent(thumbPath)}`;
@@ -88,13 +88,15 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
                         const response = await fetch(apiUrl, {
                           headers: {
                             'Authorization': `token ${config.token}`,
-                            'Accept': 'application/vnd.github.v3.raw',
                           },
                         });
                         if (response.ok) {
-                          const blob = await response.blob();
-                          metadata.thumbnail = URL.createObjectURL(blob);
-                          console.log('Using blob URL from API');
+                          const data = await response.json();
+                          if (data.content) {
+                            const base64Content = data.content.replace(/\s/g, '');
+                            metadata.thumbnail = `data:image/jpeg;base64,${base64Content}`;
+                            console.log('Using base64 data URL');
+                          }
                         }
                       } catch (e) {
                         console.log('API fetch failed:', e);
@@ -149,7 +151,7 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
                         // Strip token from download_url to avoid expiration
                         metadata.thumbnail = thumbFile.download_url.split('?')[0];
                       } else {
-                        // Fallback: fetch via GitHub API with raw media type
+                        // Fallback: fetch via GitHub API and convert to base64 data URL
                         const config = github.getConfig();
                         if (config) {
                           const apiUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/downloads/${encodeURIComponent(thumbPath)}`;
@@ -157,12 +159,14 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
                             const response = await fetch(apiUrl, {
                               headers: {
                                 'Authorization': `token ${config.token}`,
-                                'Accept': 'application/vnd.github.v3.raw',
                               },
                             });
                             if (response.ok) {
-                              const blob = await response.blob();
-                              metadata.thumbnail = URL.createObjectURL(blob);
+                              const data = await response.json();
+                              if (data.content) {
+                                const base64Content = data.content.replace(/\s/g, '');
+                                metadata.thumbnail = `data:image/jpeg;base64,${base64Content}`;
+                              }
                             }
                           } catch (e) {
                             console.log('API fetch failed:', e);
