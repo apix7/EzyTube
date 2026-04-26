@@ -52,6 +52,11 @@ export const fa = {
     token: 'توکن دسترسی گیت‌هاب',
     repo: 'مخزن هدف',
     save: 'ذخیره پیکربندی',
+    autoSetup: 'راه‌اندازی خودکار',
+    autoSetupDesc: 'با یک کلیک مخزن و workflow را بسازید',
+    manualSetup: 'یا پیکربندی دستی',
+    creatingRepo: 'ایجاد مخزن...',
+    addingWorkflow: 'افزودن workflow...',
   },
   warnings: {
     tos: 'هشدار: استفاده صرفاً برای محتوای عمومی یا متعلق به خود شما. رعایت قوانین GitHub و حق نشر الزامی است.',

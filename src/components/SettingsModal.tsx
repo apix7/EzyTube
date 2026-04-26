@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { X, Save, Check, AlertCircle } from 'lucide-react';
+import { X, Save, Check, AlertCircle, Zap } from 'lucide-react';
 import { fa } from '../lib/i18n';
 import { github } from '../lib/github';
 import { cn } from '../lib/utils';
@@ -17,6 +17,8 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isAutoSetup, setIsAutoSetup] = useState(false);
+  const [setupStep, setSetupStep] = useState<string>('');
 
   useEffect(() => {
     if (isOpen) {
@@ -76,6 +78,34 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     setTestResult(null);
   };
 
+  const handleAutoSetup = async () => {
+    if (!token) {
+      setError('توکن گیت‌هاب الزامی است');
+      return;
+    }
+
+    setIsAutoSetup(true);
+    setError(null);
+    setSetupStep(fa.settings.creatingRepo);
+
+    try {
+      const config = await github.autoSetup(token, 'cns-downloads');
+      setOwner(config.owner);
+      setRepo(config.repo);
+      setSetupStep(fa.settings.addingWorkflow);
+      setTestResult(true);
+      setTimeout(() => {
+        onClose();
+      }, 1500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'خطا در راه‌اندازی خودکار');
+      setTestResult(false);
+    } finally {
+      setIsAutoSetup(false);
+      setSetupStep('');
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -122,6 +152,34 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <div className="text-[10px] text-cns-deep">
               GitHub Personal Access Token با دسترسی repo
             </div>
+          </div>
+
+          {/* Auto Setup Button */}
+          <div className="border border-cns-primary/30 bg-cns-primary/5 p-3 space-y-2">
+            <div className="text-xs text-cns-primary flex items-center gap-2">
+              <Zap size={14} />
+              {fa.settings.autoSetup}
+            </div>
+            <div className="text-[10px] text-cns-deep">
+              {fa.settings.autoSetupDesc}
+            </div>
+            <button
+              onClick={handleAutoSetup}
+              disabled={isAutoSetup || !token}
+              className={cn(
+                "system-btn w-full py-2 text-xs border-cns-primary",
+                isAutoSetup && "animate-flicker"
+              )}
+            >
+              {isAutoSetup ? setupStep : fa.settings.autoSetup}
+            </button>
+          </div>
+
+          <div className="border-t border-cns-deep my-2" />
+
+          {/* Manual Setup Label */}
+          <div className="text-xs text-cns-deep uppercase tracking-wider text-center">
+            {fa.settings.manualSetup}
           </div>
 
           {/* Owner */}
