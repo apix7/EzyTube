@@ -384,8 +384,17 @@ function PartsModal({ item, onClose }: { item: ArchiveItem; onClose: () => void 
               <div className="space-y-2">
                 {parts.map((part) => (
                   <div key={part.path} className="flex items-center justify-between p-2 bg-cns-bg/50 rounded border border-cns-primary/20">
-                    <span className="text-xs font-mono text-cns-deep" dir="ltr">{part.name}</span>
-                    <span className="text-xs text-cns-primary" dir="ltr">{(part.size / 1024 / 1024).toFixed(1)} MB</span>
+                    <span className="text-xs font-mono text-cns-deep flex-1" dir="ltr">{part.name}</span>
+                    <span className="text-xs text-cns-primary ml-2" dir="ltr">{(part.size / 1024 / 1024).toFixed(1)} MB</span>
+                    {part.download_url && (
+                      <a
+                        href={part.download_url}
+                        download={part.name}
+                        className="system-btn ml-2"
+                      >
+                        <Download size={10} />
+                      </a>
+                    )}
                   </div>
                 ))}
               </div>
