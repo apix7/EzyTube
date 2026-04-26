@@ -48,10 +48,15 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install yt-dlp
+          pip install yt-dlp[default,EJS]
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
@@ -121,6 +126,7 @@ jobs:
               --convert-thumbnails jpg \\
               --embed-thumbnail \\
               --cookies cookies.txt \\
+              --js-runtimes node \\
               "$URL"
           else
             # Video download - add fallback for Shorts
@@ -133,6 +139,7 @@ jobs:
               --write-thumbnail \\
               --convert-thumbnails jpg \\
               --cookies cookies.txt \\
+              --js-runtimes node \\
               --retries 3 \\
               --fragment-retries 3 \\
               "$URL" || \\
@@ -145,6 +152,7 @@ jobs:
               --write-thumbnail \\
               --convert-thumbnails jpg \\
               --cookies cookies.txt \\
+              --js-runtimes node \\
               "$URL"
           fi
           
