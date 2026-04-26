@@ -58,6 +58,15 @@ jobs:
       - name: Create downloads directory
         run: mkdir -p downloads
 
+      - name: Check cookies
+        run: |
+          if [ ! -f "cookies.txt" ]; then
+            echo "ERROR: cookies.txt not found in repository"
+            echo "Please upload YouTube cookies via CNS Settings"
+            exit 1
+          fi
+          echo "Cookies file found: $(wc -l < cookies.txt) lines"
+
       - name: Download video
         id: download
         env:
@@ -92,10 +101,10 @@ jobs:
               ;;
           esac
           
-          # Build format options
-          COOKIE_OPT=""
-          if [ -f "cookies.txt" ]; then
-            COOKIE_OPT="--cookies cookies.txt"
+          # Cookies are mandatory - fail if missing
+          if [ ! -f "cookies.txt" ]; then
+            echo "ERROR: cookies.txt required but not found"
+            exit 1
           fi
           
           if [ "$FORMAT" = "mp3" ] || [ "$QUALITY" = "audio" ]; then
@@ -111,7 +120,7 @@ jobs:
               --write-thumbnail \\
               --convert-thumbnails jpg \\
               --embed-thumbnail \\
-              $COOKIE_OPT \\
+              --cookies cookies.txt \\
               "$URL"
           else
             # Video download
@@ -123,7 +132,7 @@ jobs:
               --write-info-json \\
               --write-thumbnail \\
               --convert-thumbnails jpg \\
-              $COOKIE_OPT \\
+              --cookies cookies.txt \\
               "$URL"
           fi
           
