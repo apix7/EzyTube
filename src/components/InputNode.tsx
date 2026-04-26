@@ -183,7 +183,7 @@ export function InputNode({ onSubmit, disabled }: InputNodeProps) {
 
       {error && (
         <div className="summary-strip warning text-xs text-cns-warning">
-          <span dir="ltr">[ERROR]</span> <span dir="rtl">{error}</span>
+          <span dir="ltr">[ERROR]</span> <span dir="ltr">{error}</span>
         </div>
       )}
 

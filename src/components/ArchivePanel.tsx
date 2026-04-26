@@ -321,7 +321,7 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
                 <span className="system-flag" dir="ltr">{formatSize(item.metadata?.original_size || item.size)}</span>
                 <span className="system-flag" dir="rtl">{item.type === 'video' ? fa.archive.video : fa.archive.audio}</span>
                 {item.metadata?.duration && <span className="system-flag" dir="ltr">{item.metadata.duration}</span>}
-                {item.metadata?.split && <span className="system-flag border-cns-warning text-cns-warning" dir="rtl">{item.metadata.parts} بخش</span>}
+                {item.metadata?.split && <span className="system-flag border-cns-warning text-cns-warning" dir="rtl">{(item.metadata.parts || 0).toLocaleString('fa-IR')} بخش</span>}
               </div>
 
               <div className="mt-3 flex gap-2">
@@ -331,7 +331,7 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
                     className="system-btn flex-1 justify-center"
                   >
                     <Package size={10} />
-                    <span dir="rtl">{item.metadata.parts} بخش - دانلود</span>
+                    <span dir="rtl">{(item.metadata.parts || 0).toLocaleString('fa-IR')} بخش - دانلود</span>
                   </button>
                 ) : item.download_url && (
                   <a
@@ -396,7 +396,7 @@ function PartsModal({ item, onClose }: { item: ArchiveItem; onClose: () => void 
         <div className="p-4 border-b border-cns-primary/30 flex items-center justify-between">
           <div>
             <h3 className="text-sm text-cns-highlight font-mono" dir="ltr">{item.name}</h3>
-            <p className="text-xs text-cns-primary mt-1" dir="rtl">{parts.length} بخش برای دانلود</p>
+            <p className="text-cns-primary mt-1" dir="rtl">{parts.length.toLocaleString('fa-IR')} بخش برای دانلود</p>
           </div>
           <button onClick={onClose} className="system-btn">
             <X size={14} />
