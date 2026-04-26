@@ -79,19 +79,19 @@ jobs:
           echo "Quality: $QUALITY"
           echo "Format: $FORMAT"
           
-          # Build quality options
+          # Build quality options - more flexible for Shorts
           case "$QUALITY" in
             "best")
-              QUALITY_OPT="bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+              QUALITY_OPT="bestvideo+bestaudio/best"
               ;;
             "1080p")
-              QUALITY_OPT="bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]"
+              QUALITY_OPT="bestvideo[height<=1080]+bestaudio/best[height<=1080]"
               ;;
             "720p")
-              QUALITY_OPT="bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]"
+              QUALITY_OPT="bestvideo[height<=720]+bestaudio/best[height<=720]"
               ;;
             "480p")
-              QUALITY_OPT="bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]"
+              QUALITY_OPT="bestvideo[height<=480]+bestaudio/best[height<=480]/worst"
               ;;
             "audio")
               QUALITY_OPT="bestaudio/best"
