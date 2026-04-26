@@ -266,7 +266,7 @@ jobs:
         run: |
           # Split files >100MB into zip chunks
           MAX_SIZE=$((100 * 1024 * 1024))  # 100MB
-          CHUNK_SIZE=$((50 * 1024 * 1024))  # 50MB
+          CHUNK_SIZE=$((90 * 1024 * 1024))  # 90MB
           
           cd downloads
           for file in *; do
