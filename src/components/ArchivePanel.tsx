@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Download, Trash2, FileVideo, FileAudio, FolderX, RefreshCw, Package } from 'lucide-react';
 import { fa } from '../lib/i18n';
 import { github } from '../lib/github';
+import JSZip from 'jszip';
 
 interface ArchiveItem {
   name: string;
@@ -15,8 +16,10 @@ interface ArchiveItem {
     duration: string;
     thumbnail?: string;
     split?: boolean;
+    zip?: boolean;
     parts?: number;
     original_size?: number;
+    ext?: string;
   };
 }
 
@@ -179,12 +182,14 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
       // Extract base name from item (could be JSON path or file path)
       const base = item.path.replace(/\.json$/, '').replace(/\.[^/.]+$/, '');
       const baseName = base.split('/').pop() || base;
+      const isZip = item.metadata?.zip;
+      const partSuffix = isZip ? '.zip.part' : '.part';
       const downloads = await github.getDownloads();
       const parts = downloads
-        .filter(d => d.type === 'file' && d.name.includes('.part') && d.name.startsWith(baseName))
+        .filter(d => d.type === 'file' && d.name.includes(partSuffix) && d.name.startsWith(baseName))
         .sort((a, b) => a.name.localeCompare(b.name));
 
-      console.log('Base name:', baseName);
+      console.log('Base name:', baseName, 'isZip:', isZip);
       console.log('Found parts:', parts.map(p => ({ name: p.name, size: p.size })));
 
       if (parts.length === 0) {
@@ -225,12 +230,37 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
 
       const combined = new Blob(chunks, { type: 'application/octet-stream' });
       console.log('Combined blob size:', combined.size);
-      const url = URL.createObjectURL(combined);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = item.name;
-      a.click();
-      URL.revokeObjectURL(url);
+
+      if (isZip) {
+        // Extract zip file
+        console.log('Extracting zip...');
+        const zip = await JSZip.loadAsync(combined);
+        const files = Object.keys(zip.files);
+        console.log('Files in zip:', files);
+        
+        // Find the original file (first file in zip)
+        const originalFileName = files[0];
+        if (!originalFileName) {
+          alert('خطا: فایلی در zip یافت نشد');
+          return;
+        }
+        
+        const fileData = await zip.file(originalFileName)!.async('blob');
+        const url = URL.createObjectURL(fileData);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = item.name;
+        a.click();
+        URL.revokeObjectURL(url);
+      } else {
+        // Direct download for non-zip
+        const url = URL.createObjectURL(combined);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = item.name;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (error) {
       console.error('Error combining parts:', error);
       alert('خطا در ترکیب بخش‌ها: ' + (error as Error).message);
