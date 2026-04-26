@@ -616,6 +616,7 @@ body::after {
   letter-spacing: 0.12em;
   text-transform: uppercase;
   font-family: 'Courier New', 'Consolas', 'Monaco', monospace;
+  direction: ltr !important;
 }
 
 .console-tile strong {
@@ -893,8 +894,9 @@ body::after {
   gap: 0.75rem;
   width: 100%;
   padding: 0.85rem 0.95rem;
-  text-align: right;
+  text-align: left;
   font-size: 0.72rem;
+  direction: ltr !important;
 }
 
 .format-tile {
