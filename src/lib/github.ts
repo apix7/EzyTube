@@ -513,17 +513,6 @@ class GitHubClient {
     return this.requestWithRetry(path, options, 3);
   }
 
-  async validateRepo(): Promise<boolean> {
-    try {
-      const config = this.getConfig();
-      if (!config) return false;
-      await this.request(`/repos/${config.owner}/${config.repo}`);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   async triggerWorkflow(url: string, quality: string, format: string): Promise<number> {
     const config = this.getConfig();
     if (!config) throw new CNSError('GitHub config not set', ErrorCodes.CONFIG_MISSING, false);
@@ -594,26 +583,14 @@ class GitHubClient {
     return data.workflow_runs || [];
   }
 
-  async getWorkflowLogs(runId: number): Promise<string> {
+  async getWorkflowRunJobs(runId: number): Promise<any[]> {
     const config = this.getConfig();
     if (!config) throw new Error('GitHub config not set');
 
-    try {
-      const response = await fetch(
-        `${API_BASE}/repos/${config.owner}/${config.repo}/actions/runs/${runId}/logs`,
-        {
-          headers: {
-            'Accept': 'application/vnd.github.v3+json',
-            'Authorization': `token ${config.token}`,
-          },
-        }
-      );
-      
-      if (!response.ok) return '';
-      return await response.text();
-    } catch {
-      return '';
-    }
+    const data = await this.request(
+      `/repos/${config.owner}/${config.repo}/actions/runs/${runId}/jobs?per_page=100`
+    );
+    return data.jobs || [];
   }
 
   async getDownloads(): Promise<any[]> {
@@ -763,10 +740,6 @@ class GitHubClient {
   // Cookies management
   getCookies(): string | null {
     return localStorage.getItem('cns_cookies');
-  }
-
-  clearCookies(): void {
-    localStorage.removeItem('cns_cookies');
   }
 
   async uploadCookies(cookiesContent: string): Promise<void> {

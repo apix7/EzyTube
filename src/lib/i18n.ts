@@ -24,8 +24,6 @@ export const fa = {
   actions: {
     download: 'دریافت',
     processing: 'در حال پردازش...',
-    queue: 'افزودن به صف',
-    clear: 'پاک کردن',
     settings: 'تنظیمات',
   },
   feed: {
@@ -57,10 +55,7 @@ export const fa = {
     cookies: 'کوکی‌های یوتیوب (الزامی)',
     cookiesDesc: 'یوتیوب بدون ورود به حساب کاربری، دانلود را مسدود می‌کند',
     cookiesWhy: 'کوکی‌ها باید از مرورگر شما استخراج شوند',
-    bookmarklet: 'روش 1: کشیدن این دکمه به نوار نشانک‌ها',
-    bookmarkletCode: 'Export YT Cookies',
     bookmarkletWarn: 'کوکی‌های یوتیوب بعد از مدتی منقضی می‌شوند و باید دوباره در این بخش وارد شوند.',
-    extensionMethod: 'روش 2: افزونه cookies.txt (توصیه شده)',
     extensionLink: 'Chrome Web Store',
     pasteCookies: 'محتوای فایل cookies.txt را اینجا بچسبانید',
     cookiesSaved: 'کوکی‌ها ذخیره و آپلود شدند',
@@ -68,13 +63,6 @@ export const fa = {
   warnings: {
     tos: 'هشدار: استفاده صرفاً برای محتوای عمومی یا متعلق به خود شما. رعایت قوانین GitHub و حق نشر الزامی است.',
     rateLimit: 'محدودیت نرخ درخواست: حداکثر 5 درخواست در دقیقه',
-  },
-  meta: {
-    title: 'عنوان',
-    channel: 'کانال',
-    views: 'بازدید',
-    date: 'تاریخ',
-    duration: 'مدت',
   },
   status: {
     pending: 'در انتظار',

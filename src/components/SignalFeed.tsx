@@ -23,8 +23,30 @@ const STATUS_COLORS = {
   failed: 'text-cns-warning',
 };
 
+const MAX_LOGS = 16;
+const HEARTBEAT_INTERVAL_MS = 15000;
+
+function appendLog(logs: string[], message: string) {
+  if (logs[logs.length - 1] === message) return logs;
+  return [...logs, message].slice(-MAX_LOGS);
+}
+
+function extractLiveStep(jobs: any[]): string | null {
+  const activeJob = jobs.find((job) => job.status === 'in_progress') || jobs.find((job) => job.status !== 'completed');
+  if (!activeJob) return null;
+
+  const activeStep = activeJob.steps?.find((step: any) => step.status === 'in_progress')
+    || activeJob.steps?.find((step: any) => step.status !== 'completed');
+
+  if (activeStep?.name) return activeStep.name;
+  if (activeJob.name) return activeJob.name;
+  return null;
+}
+
 export function SignalFeed({ jobs, onUpdate }: SignalFeedProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastStepRef = useRef<Record<string, string>>({});
+  const lastHeartbeatRef = useRef<Record<string, number>>({});
 
   const formatTime = (value: string) =>
     new Date(value).toLocaleTimeString('fa-IR', {
@@ -58,17 +80,47 @@ export function SignalFeed({ jobs, onUpdate }: SignalFeedProps) {
             const status = matchingRun.status === 'completed'
               ? (matchingRun.conclusion === 'success' ? 'success' : 'failed')
               : 'running';
+            let logs = job.logs;
+            let shouldUpdate = false;
 
-            if (status !== job.status) {
-              const logs = [...job.logs];
-              if (status === 'running' && job.status === 'pending') {
-                logs.push(`[${new Date().toLocaleTimeString('fa-IR')}] ${fa.feed.downloading}`);
-              } else if (status === 'success') {
-                logs.push(`[${new Date().toLocaleTimeString('fa-IR')}] ${fa.feed.complete}`);
-              } else if (status === 'failed') {
-                logs.push(`[${new Date().toLocaleTimeString('fa-IR')}] ${fa.feed.error}`);
+            if (status === 'running') {
+              const liveJobs = await github.getWorkflowRunJobs(matchingRun.id).catch(() => []);
+              const liveStep = extractLiveStep(liveJobs);
+              const now = Date.now();
+
+              if (job.status === 'pending') {
+                logs = appendLog(logs, `[${new Date().toLocaleTimeString('fa-IR')}] ${fa.feed.downloading}`);
+                shouldUpdate = true;
               }
 
+              if (liveStep && lastStepRef.current[job.id] !== liveStep) {
+                logs = appendLog(logs, `[${new Date().toLocaleTimeString('fa-IR')}] ${liveStep}`);
+                lastStepRef.current[job.id] = liveStep;
+                lastHeartbeatRef.current[job.id] = now;
+                shouldUpdate = true;
+              } else if (now - (lastHeartbeatRef.current[job.id] ?? 0) >= HEARTBEAT_INTERVAL_MS) {
+                const heartbeatText = liveStep
+                  ? `در حال اجرا: ${liveStep}`
+                  : 'در حال اجرا...';
+                logs = appendLog(logs, `[${new Date().toLocaleTimeString('fa-IR')}] ${heartbeatText}`);
+                lastHeartbeatRef.current[job.id] = now;
+                shouldUpdate = true;
+              }
+            } else {
+              delete lastStepRef.current[job.id];
+              delete lastHeartbeatRef.current[job.id];
+            }
+
+            if (status !== job.status) {
+              if (status === 'success') {
+                logs = appendLog(logs, `[${new Date().toLocaleTimeString('fa-IR')}] ${fa.feed.complete}`);
+              } else if (status === 'failed') {
+                logs = appendLog(logs, `[${new Date().toLocaleTimeString('fa-IR')}] ${fa.feed.error}`);
+              }
+              shouldUpdate = true;
+            }
+
+            if (shouldUpdate) {
               onUpdate(job.id, {
                 status,
                 logs,
@@ -109,8 +161,7 @@ export function SignalFeed({ jobs, onUpdate }: SignalFeedProps) {
         const StatusIcon = STATUS_ICONS[job.status];
         const compactUrl = job.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
         const displayUrl = compactUrl.length > 42 ? `${compactUrl.slice(0, 42)}...` : compactUrl;
-        const isIndeterminate =
-          job.status !== 'success' && job.status !== 'failed' && job.progress === 0;
+        const showMeter = job.status === 'pending' || job.status === 'running' || job.status === 'success';
 
         return (
           <article
@@ -155,12 +206,13 @@ export function SignalFeed({ jobs, onUpdate }: SignalFeedProps) {
               <span className="system-flag" dir="ltr">{job.format.toUpperCase()}</span>
             </div>
 
-            {job.status !== 'success' && job.status !== 'failed' && (
-              <div className={cn("capacity-meter mt-3", isIndeterminate && "indeterminate")}>
-                <div
-                  className="fill"
-                  style={isIndeterminate ? undefined : { width: `${job.progress}%` }}
-                />
+            {showMeter && (
+              <div className={cn(
+                "capacity-meter mt-3",
+                (job.status === 'pending' || job.status === 'running') && "active",
+                job.status === 'success' && "complete"
+              )}>
+                <div className="fill" />
               </div>
             )}
 

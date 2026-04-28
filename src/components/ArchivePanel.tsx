@@ -38,6 +38,36 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
     return () => clearInterval(interval);
   }, [refreshKey]);
 
+  const hydrateThumbnail = async (thumbnail: string | undefined) => {
+    if (!thumbnail) return thumbnail;
+
+    let thumbPath = thumbnail;
+    if (thumbPath.startsWith('downloads/')) {
+      thumbPath = thumbPath.replace('downloads/', '');
+    }
+
+    const config = github.getConfig();
+    if (!config) return thumbnail;
+
+    try {
+      const apiUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/downloads/${encodeURIComponent(thumbPath)}`;
+      const response = await fetch(apiUrl, {
+        headers: {
+          'Authorization': `token ${config.token}`,
+        },
+      });
+      if (!response.ok) return thumbnail;
+
+      const data = await response.json();
+      if (!data.content) return thumbnail;
+
+      const base64Content = data.content.replace(/\s/g, '');
+      return `data:image/jpeg;base64,${base64Content}`;
+    } catch {
+      return thumbnail;
+    }
+  };
+
   const loadItems = async () => {
     setIsLoading(true);
     try {
@@ -62,46 +92,12 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
               const metaContent = await github.getFileContent(metaPath);
               if (metaContent) {
                 metadata = JSON.parse(metaContent.content);
-                console.log('Metadata for', item.name, ':', metadata);
-                // Convert local thumbnail path to GitHub URL
                 if (metadata.thumbnail) {
-                  let thumbPath = metadata.thumbnail;
-                  console.log('Original thumbnail path:', thumbPath);
-                  // Remove 'downloads/' prefix if present
-                  if (thumbPath.startsWith('downloads/')) {
-                    thumbPath = thumbPath.replace('downloads/', '');
-                  }
-                  console.log('Cleaned thumbnail path:', thumbPath);
-                  // Always fetch thumbnail as base64 data URL
-                  const config = github.getConfig();
-                  if (config) {
-                    const apiUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/downloads/${encodeURIComponent(thumbPath)}`;
-                    try {
-                      const response = await fetch(apiUrl, {
-                        headers: {
-                          'Authorization': `token ${config.token}`,
-                        },
-                      });
-                      if (response.ok) {
-                        const data = await response.json();
-                        if (data.content) {
-                          const base64Content = data.content.replace(/\s/g, '');
-                          metadata.thumbnail = `data:image/jpeg;base64,${base64Content}`;
-                          console.log('Using base64 data URL');
-                        }
-                      }
-                    } catch (e) {
-                      console.log('API fetch failed:', e);
-                    }
-                  }
-                } else {
-                  console.log('No thumbnail in metadata for', item.name);
+                  metadata.thumbnail = await hydrateThumbnail(metadata.thumbnail);
                 }
-              } else {
-                console.log('No metadata content for', item.name);
               }
-            } catch (e) {
-              console.log('Error loading metadata for', item.name, ':', e);
+            } catch {
+              // Ignore invalid metadata
             }
 
             videoItems.push({
@@ -129,34 +125,8 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
                     const isVideo = ['mp4', 'webm', 'mkv', 'mov'].includes(originalExt);
                     const isAudio = ['mp3', 'm4a', 'wav', 'ogg', 'flac'].includes(originalExt);
                     
-                    // Convert local thumbnail path to GitHub URL
                     if (metadata.thumbnail) {
-                      let thumbPath = metadata.thumbnail;
-                      // Remove 'downloads/' prefix if present
-                      if (thumbPath.startsWith('downloads/')) {
-                        thumbPath = thumbPath.replace('downloads/', '');
-                      }
-                      // Always fetch thumbnail as base64 data URL
-                      const config = github.getConfig();
-                      if (config) {
-                        const apiUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/downloads/${encodeURIComponent(thumbPath)}`;
-                        try {
-                          const response = await fetch(apiUrl, {
-                            headers: {
-                              'Authorization': `token ${config.token}`,
-                            },
-                          });
-                          if (response.ok) {
-                            const data = await response.json();
-                            if (data.content) {
-                              const base64Content = data.content.replace(/\s/g, '');
-                              metadata.thumbnail = `data:image/jpeg;base64,${base64Content}`;
-                            }
-                          }
-                        } catch (e) {
-                          console.log('API fetch failed:', e);
-                        }
-                      }
+                      metadata.thumbnail = await hydrateThumbnail(metadata.thumbnail);
                     }
                     
                     videoItems.push({
@@ -293,9 +263,7 @@ export function ArchivePanel({ refreshKey }: ArchivePanelProps) {
                     src={item.metadata.thumbnail}
                     alt=""
                     className="h-full w-full object-cover distort-img"
-                    onLoad={() => console.log('Thumbnail loaded for', item.name)}
                     onError={(e) => {
-                      console.error('Thumbnail failed to load for', item.name, ':', item.metadata?.thumbnail);
                       (e.target as HTMLImageElement).style.display = 'none';
                     }}
                   />
