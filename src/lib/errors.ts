@@ -11,7 +11,8 @@ function joinLogsForDetection(logs: string[]): string {
 
 export function youtubeCookieFailureFromLogs(logs: string[]): boolean {
   if (!logs.length) return false;
-  const blob = joinLogsForDetection(logs);
+  const tail = logs.length > 200 ? logs.slice(-200) : logs;
+  const blob = joinLogsForDetection(tail);
   return (
     blob.includes('cookies are no longer valid') ||
     blob.includes('account cookies are no longer valid') ||
@@ -19,9 +20,7 @@ export function youtubeCookieFailureFromLogs(logs: string[]): boolean {
     blob.includes('exporting-youtube-cookies') ||
     (blob.includes('no longer valid') && blob.includes('cookie')) ||
     (blob.includes('sign in to confirm') && blob.includes('not a bot')) ||
-    (blob.includes('confirm you') && blob.includes('not a bot')) ||
-    blob.includes('use --cookies-from-browser or --cookies') ||
-    blob.includes('--cookies for the authentication')
+    (blob.includes('confirm you') && blob.includes('not a bot'))
   );
 }
 
@@ -48,14 +47,16 @@ export function toPersianErrorMessage(error: unknown): string {
 
   if (
     message.includes('cookies.txt') ||
-    message.includes('cookie') ||
     message.includes('cookies are no longer valid') ||
+    message.includes('account cookies are no longer valid') ||
     message.includes('rotated in the browser') ||
+    message.includes('exporting-youtube-cookies') ||
+    (message.includes('no longer valid') && message.includes('cookie')) ||
     message.includes('not a bot') ||
     (message.includes('sign in to confirm') && (message.includes('youtube') || message.includes('not a bot'))) ||
-
-    message.includes('use --cookies-from-browser or --cookies') ||
-    message.includes('--cookies for the authentication')
+    (message.includes('please upload') && message.includes('cookie')) ||
+    message.includes('cookies.txt not found') ||
+    message.includes('cookies.txt required')
   ) {
     return PERSIAN_YOUTUBE_COOKIES_EXPIRED;
   }
