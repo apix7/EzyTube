@@ -103,7 +103,11 @@ export function useArchive({ refreshKey = 0, pollIntervalMs = 30000, enabled = t
   const loadInFlightRef = useRef(false);
   const queuedLoadRef = useRef(false);
   const thumbCacheRef = useRef<Map<string, string>>(new Map());
+  const thumbCacheTimeRef = useRef<Map<string, number>>(new Map());
+  const thumbInflightRef = useRef<Map<string, Promise<string | undefined>>>(new Map());
   const metaCacheRef = useRef<Map<string, { sha: string; metadata: ArchiveItem['metadata'] }>>(new Map());
+  const metaCacheTimeRef = useRef<Map<string, number>>(new Map());
+  const metaInflightRef = useRef<Map<string, Promise<ArchiveItem['metadata'] | undefined>>>(new Map());
 
   const loadItems = useCallback(async () => {
     if (loadInFlightRef.current) {
@@ -151,27 +155,49 @@ export function useArchive({ refreshKey = 0, pollIntervalMs = 30000, enabled = t
       const loadMetadataForPath = async (path: string, sha?: string) => {
         if (!path) return undefined;
         const cacheHit = metaCacheRef.current.get(path);
-        if (cacheHit && (!sha || cacheHit.sha === sha)) {
+        const cacheTs = metaCacheTimeRef.current.get(path) ?? 0;
+        if (cacheHit && (!sha || cacheHit.sha === sha) && Date.now() - cacheTs < 25_000) {
           return cacheHit.metadata;
         }
-        const metaContent = await github.getFileContent(path);
-        if (!metaContent) return undefined;
-        const parsed = JSON.parse(metaContent.content) as ArchiveItem['metadata'];
-        if (parsed?.thumbnail && !/^https?:\/\//i.test(parsed.thumbnail)) {
-          const key = `${parsed.thumbnail}::${path}`;
-          const thumbCached = thumbCacheRef.current.get(key);
-          if (thumbCached) {
-            parsed.thumbnail = thumbCached;
-          } else {
-            const hydrated = await hydrateThumbnail(parsed.thumbnail);
-            if (hydrated) {
-              parsed.thumbnail = hydrated;
-              thumbCacheRef.current.set(key, hydrated);
+        const inflight = metaInflightRef.current.get(path);
+        if (inflight) return inflight;
+        const load = (async () => {
+          const metaContent = await github.getFileContent(path);
+          if (!metaContent) return undefined;
+          const parsed = JSON.parse(metaContent.content) as ArchiveItem['metadata'];
+          if (parsed?.thumbnail && !/^https?:\/\//i.test(parsed.thumbnail)) {
+            const key = `${parsed.thumbnail}::${path}`;
+            const thumbCached = thumbCacheRef.current.get(key);
+            const thumbTs = thumbCacheTimeRef.current.get(key) ?? 0;
+            if (thumbCached && Date.now() - thumbTs < 30_000) {
+              parsed.thumbnail = thumbCached;
+            } else {
+              const thumbInflight = thumbInflightRef.current.get(key);
+              if (thumbInflight) {
+                const hydrated = await thumbInflight;
+                if (hydrated) parsed.thumbnail = hydrated;
+              } else {
+                const thumbLoad = hydrateThumbnail(parsed.thumbnail);
+                thumbInflightRef.current.set(key, thumbLoad);
+                const hydrated = await thumbLoad.finally(() => {
+                  thumbInflightRef.current.delete(key);
+                });
+                if (hydrated) {
+                  parsed.thumbnail = hydrated;
+                  thumbCacheRef.current.set(key, hydrated);
+                  thumbCacheTimeRef.current.set(key, Date.now());
+                }
+              }
             }
           }
-        }
-        metaCacheRef.current.set(path, { sha: metaContent.sha, metadata: parsed });
-        return parsed;
+          metaCacheRef.current.set(path, { sha: metaContent.sha, metadata: parsed });
+          metaCacheTimeRef.current.set(path, Date.now());
+          return parsed;
+        })().finally(() => {
+          metaInflightRef.current.delete(path);
+        });
+        metaInflightRef.current.set(path, load);
+        return load;
       };
 
       const videoTasks = videoSourceItems.map((item) => async () => {
@@ -239,15 +265,6 @@ export function useArchive({ refreshKey = 0, pollIntervalMs = 30000, enabled = t
         processedBases.add(base);
       });
 
-      const needsCommit = videoItems.filter((it) => !it.committed_at).slice(0, 12);
-      const commitTimes = await runWithLimit(
-        needsCommit.map((it) => async () => github.getFileCommitTime(it.path)),
-        4
-      );
-      needsCommit.forEach((it, i) => {
-        it.committed_at = new Date(commitTimes[i] ?? 0).getTime();
-      });
-
       videoItems.sort((a, b) => {
         const aTime = a.committed_at ?? 0;
         const bTime = b.committed_at ?? 0;
@@ -255,6 +272,34 @@ export function useArchive({ refreshKey = 0, pollIntervalMs = 30000, enabled = t
         return b.name.localeCompare(a.name);
       });
       setItems(videoItems);
+
+      const needsCommit = videoItems.filter((it) => !it.committed_at).slice(0, 16);
+      if (needsCommit.length > 0) {
+        void runWithLimit(
+          needsCommit.map((it) => async () => {
+            const ct = await github.getFileCommitTime(it.path);
+            const ts = new Date(ct ?? 0).getTime();
+            return { path: it.path, ts: Number.isFinite(ts) ? ts : 0 };
+          }),
+          4
+        ).then((results) => {
+          if (!results.length) return;
+          setItems((prev) => {
+            const byPath = new Map(results.map((x) => [x.path, x.ts]));
+            const next = prev.map((it) => {
+              const ts = byPath.get(it.path);
+              return ts && ts > 0 ? { ...it, committed_at: ts } : it;
+            });
+            next.sort((a, b) => {
+              const aTime = a.committed_at ?? 0;
+              const bTime = b.committed_at ?? 0;
+              if (aTime || bTime) return bTime - aTime;
+              return b.name.localeCompare(a.name);
+            });
+            return next;
+          });
+        });
+      }
     } catch (err) {
       logger.warn('[Archive] loadItems failed', {
         error: err,
@@ -320,9 +365,33 @@ export function useArchive({ refreshKey = 0, pollIntervalMs = 30000, enabled = t
       if (downloading) return;
       setDownloading(item.path);
       try {
-        const nativeOk = await github.downloadFileViaNative(item.path, item.name);
-        if (nativeOk) return;
-        const blob = await github.downloadFileAsBlob(item.sha, item.path);
+        const preflight = await github.preflightDownload(item.path);
+        if (!preflight.ok) throw new Error(preflight.reason || 'Download preflight failed');
+        const nativePath = await github.downloadFileViaNative(item.path, item.name);
+        if (nativePath) {
+          try {
+            const slash = Math.max(nativePath.lastIndexOf('/'), nativePath.lastIndexOf('\\'));
+            const dir = slash >= 0 ? nativePath.slice(0, slash) : nativePath;
+            localStorage.setItem('cns_last_download_dir', dir);
+          } catch {
+          }
+          return;
+        }
+        let blob: Blob | null = null;
+        let lastErr: unknown = null;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            blob = await github.downloadFileAsBlob(item.sha, item.path);
+            break;
+          } catch (err) {
+            lastErr = err;
+            if (attempt < 2) {
+              const jitter = 280 + Math.floor(Math.random() * 520);
+              await new Promise((resolve) => setTimeout(resolve, jitter * (attempt + 1)));
+            }
+          }
+        }
+        if (!blob) throw (lastErr instanceof Error ? lastErr : new Error('Download failed'));
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
