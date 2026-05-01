@@ -50,6 +50,7 @@ function isActiveJobStatus(s: DownloadJob['status']) {
 }
 
 const RUN_MATCH_MAX_DELTA_MS = 15 * 60 * 1000;
+const RUN_MATCH_SKEW_MS = 30_000;
 
 function pickWorkflowRunForJob(job: DownloadJob, runs: any[]): any | null {
   if (job.githubRunId != null) {
@@ -57,18 +58,47 @@ function pickWorkflowRunForJob(job: DownloadJob, runs: any[]): any | null {
   }
   const jobTime = new Date(job.createdAt).getTime();
   if (!Number.isFinite(jobTime)) return null;
-  const scored = runs
+
+  const normalized = runs
     .map((run: any) => {
       const runTime = new Date(run.created_at).getTime();
       if (!Number.isFinite(runTime)) return null;
-      return { run, delta: Math.abs(runTime - jobTime) };
+      return { run, runTime, after: runTime - jobTime };
     })
-    .filter((x): x is { run: any; delta: number } => x != null && x.delta < RUN_MATCH_MAX_DELTA_MS)
+    .filter((x): x is { run: any; runTime: number; after: number } => x != null);
+
+  const nearDispatch = normalized
+    .filter((x) => x.after >= -RUN_MATCH_SKEW_MS && x.after <= RUN_MATCH_MAX_DELTA_MS)
     .sort((a, b) => {
-      if (a.delta !== b.delta) return a.delta - b.delta;
+      const aPos = a.after >= 0 ? 1 : 0;
+      const bPos = b.after >= 0 ? 1 : 0;
+      if (aPos !== bPos) return bPos - aPos;
+      if (a.after >= 0 && b.after >= 0) {
+        if (a.after !== b.after) return a.after - b.after;
+      } else if (a.after < 0 && b.after < 0) {
+        if (a.after !== b.after) return b.after - a.after;
+      } else if (a.after !== b.after) {
+        return a.after - b.after;
+      }
       return (b.run.id ?? 0) - (a.run.id ?? 0);
     });
-  return scored[0]?.run ?? null;
+
+  if (nearDispatch.length > 0) {
+    return nearDispatch[0].run;
+  }
+
+  const fallback = normalized
+    .filter((x) => Math.abs(x.after) < RUN_MATCH_MAX_DELTA_MS)
+    .sort((a, b) => {
+      const alive = (r: any) => r.status !== 'completed';
+      if (alive(a.run) !== alive(b.run)) return alive(a.run) ? -1 : 1;
+      const da = Math.abs(a.after);
+      const db = Math.abs(b.after);
+      if (da !== db) return da - db;
+      return (b.run.id ?? 0) - (a.run.id ?? 0);
+    });
+
+  return fallback[0]?.run ?? null;
 }
 
 function deriveGithubActionsProgress(
