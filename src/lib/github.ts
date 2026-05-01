@@ -169,6 +169,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: \${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            .github/workflows
+            cookies.txt
+          sparse-checkout-cone-mode: false
 
       - name: Setup Python
         uses: actions/setup-python@v5
