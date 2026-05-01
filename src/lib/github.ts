@@ -4,6 +4,17 @@ const API_BASE =
   typeof window !== 'undefined' && window.location.origin.startsWith('http://localhost:')
     ? '/github-api'
     : 'https://api.github.com';
+const SECURE_TOKEN_PLACEHOLDER = '__cns_secure_token__';
+const SESSION_TOKEN_KEY = 'cns_github_token_session';
+const GET_CACHE_TTL_MS = 12_000;
+const MAX_GET_CACHE = 160;
+
+declare global {
+  interface Window {
+    __TAURI__?: any;
+    __TAURI_INVOKE__?: (command: string, payload?: any) => Promise<any>;
+  }
+}
 
 function utf8ToBase64GitHub(s: string): string {
   const bytes = new TextEncoder().encode(s);
@@ -163,6 +174,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -467,6 +479,85 @@ export interface GitHubConfig {
 class GitHubClient {
   private config: GitHubConfig | null = null;
   private workflowEnsured = false;
+  private getCache = new Map<string, { ts: number; etag?: string; data: unknown }>();
+
+  private getTauriInvoke():
+    | ((command: string, payload?: Record<string, unknown>) => Promise<any>)
+    | null {
+    if (typeof window === 'undefined') return null;
+    if (typeof window.__TAURI__?.invoke === 'function') return window.__TAURI__.invoke;
+    if (typeof window.__TAURI_INVOKE__ === 'function') return window.__TAURI_INVOKE__;
+    if (typeof window.__TAURI__?.tauri?.invoke === 'function') return window.__TAURI__.tauri.invoke;
+    return null;
+  }
+
+  private isDesktopRuntime(): boolean {
+    return this.getTauriInvoke() != null;
+  }
+
+  private cacheKey(path: string, options: RequestInit): string {
+    const method = (options.method || 'GET').toUpperCase();
+    return `${method}:${path}`;
+  }
+
+  private readGetCache(key: string): { etag?: string; data: unknown } | null {
+    const entry = this.getCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.ts > GET_CACHE_TTL_MS) {
+      this.getCache.delete(key);
+      return null;
+    }
+    return { etag: entry.etag, data: entry.data };
+  }
+
+  private writeGetCache(key: string, etag: string | null, data: unknown) {
+    if (this.getCache.size >= MAX_GET_CACHE) {
+      const firstKey = this.getCache.keys().next().value;
+      if (firstKey) this.getCache.delete(firstKey);
+    }
+    this.getCache.set(key, { ts: Date.now(), etag: etag || undefined, data });
+  }
+
+  async hydrateSecureConfig(): Promise<GitHubConfig | null> {
+    const stored = storage.get('cns_github_config');
+    if (!stored) return null;
+    const parsed = safeJSONParse<unknown>(stored, null);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const base = parsed as Record<string, unknown>;
+    if (typeof base.owner !== 'string' || typeof base.repo !== 'string' || typeof base.token !== 'string') {
+      return null;
+    }
+    if (base.token !== SECURE_TOKEN_PLACEHOLDER) {
+      if (isValidConfig(parsed)) {
+        this.config = parsed;
+        return parsed;
+      }
+      return null;
+    }
+    let token: string | null = null;
+    try {
+      token = sessionStorage.getItem(SESSION_TOKEN_KEY);
+    } catch {
+      token = null;
+    }
+    if (!token) {
+      const invoke = this.getTauriInvoke();
+      if (invoke) {
+        try {
+          const secureToken = await invoke('get_secure_github_token');
+          if (typeof secureToken === 'string' && secureToken.length > 0) {
+            token = secureToken;
+            sessionStorage.setItem(SESSION_TOKEN_KEY, secureToken);
+          }
+        } catch {
+        }
+      }
+    }
+    if (!token) return null;
+    const config: GitHubConfig = { token, owner: base.owner, repo: base.repo };
+    this.config = config;
+    return config;
+  }
 
   setConfig(config: GitHubConfig) {
     if (!isValidConfig(config)) {
@@ -479,7 +570,19 @@ class GitHubClient {
     }
     this.config = config;
     this.workflowEnsured = false;
-    storage.set('cns_github_config', JSON.stringify(config));
+    if (this.isDesktopRuntime()) {
+      storage.set('cns_github_config', JSON.stringify({ owner: config.owner, repo: config.repo, token: SECURE_TOKEN_PLACEHOLDER }));
+      try {
+        sessionStorage.setItem(SESSION_TOKEN_KEY, config.token);
+      } catch {
+      }
+      const invoke = this.getTauriInvoke();
+      if (invoke) {
+        void invoke('set_secure_github_token', { token: config.token }).catch(() => {});
+      }
+    } else {
+      storage.set('cns_github_config', JSON.stringify(config));
+    }
     logger.info('[GitHub] Config saved', { owner: config.owner, repo: config.repo });
   }
 
@@ -492,6 +595,29 @@ class GitHubClient {
     const parsed = safeJSONParse<unknown>(stored, null);
 
     if (!isValidConfig(parsed)) {
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        (parsed as Record<string, unknown>).token === SECURE_TOKEN_PLACEHOLDER &&
+        typeof (parsed as Record<string, unknown>).owner === 'string' &&
+        typeof (parsed as Record<string, unknown>).repo === 'string'
+      ) {
+        let sessToken: string | null = null;
+        try {
+          sessToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
+        } catch {
+          sessToken = null;
+        }
+        if (sessToken && typeof sessToken === 'string') {
+          const cfg: GitHubConfig = {
+            owner: (parsed as Record<string, string>).owner,
+            repo: (parsed as Record<string, string>).repo,
+            token: sessToken,
+          };
+          this.config = cfg;
+          return cfg;
+        }
+      }
       logger.error('[GitHub] Invalid or corrupted config found, clearing', {
         ownerType: typeof (parsed as Record<string, unknown>)?.owner,
         repoType: typeof (parsed as Record<string, unknown>)?.repo,
@@ -510,6 +636,14 @@ class GitHubClient {
     this.config = null;
     this.workflowEnsured = false;
     storage.remove('cns_github_config');
+    try {
+      sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    } catch {
+    }
+    const invoke = this.getTauriInvoke();
+    if (invoke) {
+      void invoke('clear_secure_github_token').catch(() => {});
+    }
     logger.info('[GitHub] Config cleared');
   }
 
@@ -542,10 +676,14 @@ class GitHubClient {
 
   private async requestWithToken(token: string, path: string, options: RequestInit = {}, retries: number = 3): Promise<any> {
     const url = `${API_BASE}${path}`;
+    const method = (options.method || 'GET').toUpperCase();
+    const key = this.cacheKey(path, { ...options, method });
+    const cached = method === 'GET' ? this.readGetCache(key) : null;
     const headers = {
       'Accept': 'application/vnd.github.v3+json',
       'Authorization': `token ${token}`,
       'User-Agent': 'CNS-YouTube-Downloader',
+      ...(cached?.etag ? { 'If-None-Match': cached.etag } : {}),
       ...options.headers,
     };
 
@@ -555,6 +693,9 @@ class GitHubClient {
       try {
         const response = await fetch(url, { ...options, headers });
 
+        if (response.status === 304 && cached) {
+          return cached.data;
+        }
         if (!response.ok) {
           const errorData = (await response.json().catch(() => ({}))) as Record<string, unknown>;
           const message = (typeof errorData.message === 'string' && errorData.message) || `HTTP ${response.status}`;
@@ -575,8 +716,14 @@ class GitHubClient {
           }
           if (response.status === 403) {
             const isRateLimit = String(errorData.message ?? '').includes('rate limit');
+            const resetRaw = response.headers.get('x-ratelimit-reset');
+            const resetTs = resetRaw && /^\d+$/.test(resetRaw) ? Number(resetRaw) * 1000 : null;
+            const retryHint =
+              isRateLimit && resetTs
+                ? ` Retry after ${new Date(resetTs).toISOString()}.`
+                : '';
             throw new CNSError(
-              isRateLimit ? `Rate limited: ${message}` : `Forbidden: ${message}`,
+              isRateLimit ? `Rate limited: ${message}.${retryHint}` : `Forbidden: ${message}`,
               isRateLimit ? ErrorCodes.RATE_LIMITED : ErrorCodes.AUTH_FAILED,
               isRateLimit
             );
@@ -595,7 +742,11 @@ class GitHubClient {
           return null;
         }
 
-        return response.json();
+        const data = await response.json();
+        if (method === 'GET') {
+          this.writeGetCache(key, response.headers.get('etag'), data);
+        }
+        return data;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
 
@@ -617,10 +768,14 @@ class GitHubClient {
     if (!config) throw new CNSError('GitHub config not set', ErrorCodes.CONFIG_MISSING, false);
 
     const url = `${API_BASE}${path}`;
+    const method = (options.method || 'GET').toUpperCase();
+    const key = this.cacheKey(path, { ...options, method });
+    const cached = method === 'GET' ? this.readGetCache(key) : null;
     const headers = {
       'Accept': 'application/vnd.github.v3+json',
       'Authorization': `token ${config.token}`,
       'User-Agent': 'CNS-YouTube-Downloader',
+      ...(cached?.etag ? { 'If-None-Match': cached.etag } : {}),
       ...options.headers,
     };
 
@@ -630,6 +785,9 @@ class GitHubClient {
       try {
         const response = await fetch(url, { ...options, headers });
         
+        if (response.status === 304 && cached) {
+          return cached.data;
+        }
         if (!response.ok) {
           const errorData = (await response.json().catch(() => ({}))) as Record<string, unknown>;
           const message = (typeof errorData.message === 'string' && errorData.message) || `HTTP ${response.status}`;
@@ -650,8 +808,14 @@ class GitHubClient {
           }
           if (response.status === 403) {
             const isRateLimit = String(errorData.message ?? '').includes('rate limit');
+            const resetRaw = response.headers.get('x-ratelimit-reset');
+            const resetTs = resetRaw && /^\d+$/.test(resetRaw) ? Number(resetRaw) * 1000 : null;
+            const retryHint =
+              isRateLimit && resetTs
+                ? ` Retry after ${new Date(resetTs).toISOString()}.`
+                : '';
             throw new CNSError(
-              isRateLimit ? `Rate limited: ${message}` : `Forbidden: ${message}`,
+              isRateLimit ? `Rate limited: ${message}.${retryHint}` : `Forbidden: ${message}`,
               isRateLimit ? ErrorCodes.RATE_LIMITED : ErrorCodes.AUTH_FAILED,
               isRateLimit
             );
@@ -670,7 +834,11 @@ class GitHubClient {
           return null;
         }
 
-        return response.json();
+        const data = await response.json();
+        if (method === 'GET') {
+          this.writeGetCache(key, response.headers.get('etag'), data);
+        }
+        return data;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
 
@@ -955,6 +1123,25 @@ class GitHubClient {
       throw new Error(`Download failed: HTTP ${response.status}`);
     }
     return response.blob();
+  }
+
+  async downloadFileViaNative(path: string, fileName: string): Promise<boolean> {
+    const config = this.getConfig();
+    if (!config) return false;
+    const invoke = this.getTauriInvoke();
+    if (!invoke) return false;
+    try {
+      const out = await invoke('download_github_file', {
+        owner: config.owner,
+        repo: config.repo,
+        token: config.token,
+        path,
+        fileName,
+      });
+      return typeof out === 'string' && out.length > 0;
+    } catch {
+      return false;
+    }
   }
 
   async deleteFile(path: string, sha: string): Promise<void> {
