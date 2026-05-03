@@ -488,6 +488,7 @@ jobs:
             echo "No changes to commit"
           else
             git commit -m "CNS: Download \$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            git pull --rebase origin main
             git push origin HEAD:main
             echo "Committed and pushed"
           fi
