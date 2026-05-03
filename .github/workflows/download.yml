@@ -333,6 +333,11 @@ jobs:
               break
             fi
             git fetch --no-tags origin main
+            incoming=0
+            c=$(git rev-list --count HEAD..origin/main 2>/dev/null) && incoming=$c || true
+            if [ "${incoming:-0}" -eq 0 ]; then
+              exit 1
+            fi
             git rebase origin/main || exit 1
           done
           [ "$ok" = 1 ] || exit 1
