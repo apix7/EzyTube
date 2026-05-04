@@ -18,7 +18,7 @@ export const fa = {
     advancedOptAutoBr: 'خودکار',
     advancedOptH264: 'H.264',
     advancedOptVp9: 'VP9',
-    advancedOptHevc: 'HEVC (H.265)',
+    advancedOptHevc: 'H.265',
     advancedOptAv1: 'AV1',
   },
   actions: {
