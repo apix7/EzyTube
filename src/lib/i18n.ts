@@ -8,6 +8,8 @@ export const fa = {
     pasteFailed: 'خواندن کلیپ‌بورد ممکن نیست (مجوز مرورگر یا HTTPS)',
     advancedTitle: 'گزینه‌های پیشرفته',
     advancedBtn: 'پیشرفته',
+    advancedContainer: 'ظرف',
+    advancedOptContainerDefault: 'پیش‌فرض (همان فرمت)',
     advancedCodec: 'کدک',
     advancedBitrate: 'بیت‌ریت',
     advancedEmbedMeta: 'جاسازی متادیتا',

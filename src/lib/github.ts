@@ -120,10 +120,12 @@ export const ErrorCodes = {
   CONFIG_MISSING: 'CONFIG_MISSING',
 } as const;
 
+export type DownloadAdvancedContainer = 'default' | 'mp4' | 'webm' | 'mkv';
 export type DownloadAdvancedCodec = 'copy' | 'h264' | 'vp9';
 export type DownloadAdvancedBitrate = 'auto' | '1M' | '3M' | '5M' | '8M';
 
 export interface DownloadAdvancedOptions {
+  container: DownloadAdvancedContainer;
   codec: DownloadAdvancedCodec;
   bitrate: DownloadAdvancedBitrate;
   embedMetadata: boolean;
@@ -131,6 +133,7 @@ export interface DownloadAdvancedOptions {
 }
 
 export const DEFAULT_DOWNLOAD_ADVANCED: DownloadAdvancedOptions = {
+  container: 'default',
   codec: 'copy',
   bitrate: 'auto',
   embedMetadata: true,
@@ -139,6 +142,7 @@ export const DEFAULT_DOWNLOAD_ADVANCED: DownloadAdvancedOptions = {
 
 export function workflowDispatchAdvancedPayload(adv: DownloadAdvancedOptions) {
   return {
+    container: adv.container,
     codec: adv.codec,
     bitrate: adv.bitrate,
     embed_metadata: adv.embedMetadata ? 'true' : 'false',
@@ -176,6 +180,16 @@ on:
           - mp4
           - webm
           - mp3
+      container:
+        description: 'Video merge container override'
+        required: true
+        default: 'default'
+        type: choice
+        options:
+          - default
+          - mp4
+          - webm
+          - mkv
       codec:
         description: 'Video re-encode after download'
         required: true
@@ -313,6 +327,7 @@ jobs:
           URL: \${{ github.event.inputs.url }}
           QUALITY: \${{ github.event.inputs.quality }}
           FORMAT: \${{ github.event.inputs.format }}
+          CONTAINER: \${{ github.event.inputs.container }}
           CODEC: \${{ github.event.inputs.codec }}
           BITRATE: \${{ github.event.inputs.bitrate }}
           EMBED_METADATA: \${{ github.event.inputs.embed_metadata }}
@@ -373,6 +388,20 @@ jobs:
           [ "$EMBED_METADATA" = "true" ] && EM1="--embed-metadata" || true
           [ "$EMBED_THUMBNAIL" = "true" ] && EM2="--embed-thumbnail" || true
           
+          MERGE_FORMAT="$FORMAT"
+          if [ "$CONTAINER" != "default" ] && [ -n "$CONTAINER" ]; then
+            case "$CONTAINER" in
+              mp4|webm|mkv) MERGE_FORMAT="$CONTAINER" ;;
+            esac
+          fi
+          
+          VIDEO_FMTSEL="$QUALITY_OPT"
+          MKV_EX=""
+          if [ "$MERGE_FORMAT" = "mkv" ]; then
+            VIDEO_FMTSEL='bestvideo*+mergeall[vcodec=none]/'"$QUALITY_OPT"
+            MKV_EX="--audio-multistreams --embed-subs --sub-langs all"
+          fi
+          
           if [ "$FORMAT" = "mp3" ] || [ "$QUALITY" = "audio" ]; then
             OUTPUT_TEMPLATE="downloads/%(title)s.%(ext)s"
             yt-dlp \\
@@ -394,8 +423,8 @@ jobs:
           else
             OUTPUT_TEMPLATE="downloads/%(title)s.%(ext)s"
             yt-dlp \\
-              --format "$QUALITY_OPT" \\
-              --merge-output-format "$FORMAT" \\
+              --format "$VIDEO_FMTSEL" \\
+              --merge-output-format "$MERGE_FORMAT" \\
               --postprocessor-args "Merger+ffmpeg:-max_muxing_queue_size 99999" \\
               --output "$OUTPUT_TEMPLATE" \\
               --windows-filenames \\
@@ -405,6 +434,7 @@ jobs:
               --convert-thumbnails jpg \\
               $EM1 \\
               $EM2 \\
+              $MKV_EX \\
               --cookies cookies.txt \\
               --js-runtimes node \\
               --retries 3 \\
@@ -412,7 +442,7 @@ jobs:
               "$URL" || \\
             yt-dlp \\
               --format "worstvideo+worstaudio/worst" \\
-              --merge-output-format "$FORMAT" \\
+              --merge-output-format "$MERGE_FORMAT" \\
               --postprocessor-args "Merger+ffmpeg:-max_muxing_queue_size 99999" \\
               --output "$OUTPUT_TEMPLATE" \\
               --windows-filenames \\
@@ -422,6 +452,7 @@ jobs:
               --convert-thumbnails jpg \\
               $EM1 \\
               $EM2 \\
+              $MKV_EX \\
               --cookies cookies.txt \\
               --js-runtimes node \\
               "$URL"
