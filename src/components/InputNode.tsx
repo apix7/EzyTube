@@ -384,7 +384,7 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
                   }
                   disabled={formLocked}
                 >
-                  <span>{fa.input.advancedEmbedMeta}</span>
+                  <span className="advanced-toggle-label">{fa.input.advancedEmbedMeta}</span>
                   <span className="advanced-toggle-knob" aria-hidden />
                 </button>
               </div>
@@ -397,7 +397,7 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
                   }
                   disabled={formLocked}
                 >
-                  <span>{fa.input.advancedEmbedThumb}</span>
+                  <span className="advanced-toggle-label">{fa.input.advancedEmbedThumb}</span>
                   <span className="advanced-toggle-knob" aria-hidden />
                 </button>
               </div>
