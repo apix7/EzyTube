@@ -1,6 +1,17 @@
 import { logger } from './logger';
 
 const API_BASE = 'https://api.github.com';
+const SECURE_TOKEN_PLACEHOLDER = '__cns_secure_token__';
+const SESSION_TOKEN_KEY = 'cns_github_token_session';
+const GET_CACHE_TTL_MS = 12_000;
+const MAX_GET_CACHE = 160;
+
+declare global {
+  interface Window {
+    __TAURI__?: any;
+    __TAURI_INVOKE__?: (command: string, payload?: any) => Promise<any>;
+  }
+}
 
 function utf8ToBase64GitHub(s: string): string {
   const bytes = new TextEncoder().encode(s);
@@ -155,6 +166,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: \${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            .github/workflows
+            cookies.txt
+          sparse-checkout-cone-mode: false
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -184,6 +201,49 @@ jobs:
             exit 1
           fi
           echo "Cookies file found: $(wc -l < cookies.txt) lines"
+          python3 << 'PYCHK'
+          import math
+          import sys
+          import time
+          now = int(time.time())
+          auth = {
+              'sid', 'hsid', 'ssid', 'apisid', 'sapisid',
+              '__secure-1psid', '__secure-3psid', '__secure-1psidts', '__secure-3psidts',
+              'login_info',
+          }
+          has_rows = False
+          live = False
+          with open('cookies.txt', 'r', encoding='utf-8', errors='replace') as f:
+              for raw in f:
+                  line = raw.strip()
+                  if not line or line.startswith('#'):
+                      continue
+                  parts = line.split(chr(9))
+                  if len(parts) < 7:
+                      continue
+                  has_rows = True
+                  domain = (parts[0] or '').lower()
+                  name = (parts[5] or '').lower()
+                  try:
+                      expiry = int(parts[4] or '0')
+                  except ValueError:
+                      expiry = float('nan')
+                  if 'youtube.com' not in domain and 'google.com' not in domain:
+                      continue
+                  if name not in auth:
+                      continue
+                  if math.isnan(expiry) or expiry <= 0 or expiry > now:
+                      live = True
+                      break
+          if not has_rows:
+              print('::error title=CNS cookies invalid::cookies.txt is not a valid Netscape cookies file. Export fresh cookies from your browser (Get cookies.txt) and upload via CNS Settings.')
+              print('ERROR: CNS_COOKIES_INVALID')
+              sys.exit(1)
+          if not live:
+              print('::error title=CNS cookies expired::YouTube/Google auth cookies in cookies.txt look expired. Open CNS Settings, paste fresh cookies.txt from the browser where you are logged into youtube.com, save, then retry.')
+              print('ERROR: CNS_COOKIES_EXPIRED cookies are no longer valid')
+              sys.exit(1)
+          PYCHK
 
       - name: Download video
         id: download
@@ -197,19 +257,37 @@ jobs:
           echo "Quality: $QUALITY"
           echo "Format: $FORMAT"
           
-          # Build quality options - more flexible for Shorts
+          mkdir -p downloads/.tmp
+          export TMPDIR="\${{ github.workspace }}/downloads/.tmp"
+          
           case "$QUALITY" in
             "best")
-              QUALITY_OPT="bestvideo+bestaudio/best"
+              if [ "$FORMAT" = "mp4" ]; then
+                QUALITY_OPT="bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc1]+bestaudio/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+              else
+                QUALITY_OPT="bestvideo+bestaudio/best"
+              fi
               ;;
             "1080p")
-              QUALITY_OPT="bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+              if [ "$FORMAT" = "mp4" ]; then
+                QUALITY_OPT="bestvideo[vcodec^=avc1][height<=1080]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc1][height<=1080]+bestaudio/bestvideo[height<=1080][ext=mp4]+bestaudio/bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+              else
+                QUALITY_OPT="bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+              fi
               ;;
             "720p")
-              QUALITY_OPT="bestvideo[height<=720]+bestaudio/best[height<=720]"
+              if [ "$FORMAT" = "mp4" ]; then
+                QUALITY_OPT="bestvideo[vcodec^=avc1][height<=720]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc1][height<=720]+bestaudio/bestvideo[height<=720][ext=mp4]+bestaudio/bestvideo[height<=720]+bestaudio/best[height<=720]"
+              else
+                QUALITY_OPT="bestvideo[height<=720]+bestaudio/best[height<=720]"
+              fi
               ;;
             "480p")
-              QUALITY_OPT="bestvideo[height<=480]+bestaudio/best[height<=480]/worst"
+              if [ "$FORMAT" = "mp4" ]; then
+                QUALITY_OPT="bestvideo[vcodec^=avc1][height<=480]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/worst"
+              else
+                QUALITY_OPT="bestvideo[height<=480]+bestaudio/best[height<=480]/worst"
+              fi
               ;;
             "audio")
               QUALITY_OPT="bestaudio/best"
@@ -234,6 +312,8 @@ jobs:
               --audio-format mp3 \\
               --audio-quality 0 \\
               --output "$OUTPUT_TEMPLATE" \\
+              --windows-filenames \\
+              --trim-filenames 200 \\
               --write-info-json \\
               --write-thumbnail \\
               --convert-thumbnails jpg \\
@@ -242,12 +322,14 @@ jobs:
               --js-runtimes node \\
               "$URL"
           else
-            # Video download - add fallback for Shorts
             OUTPUT_TEMPLATE="downloads/%(title)s.%(ext)s"
             yt-dlp \\
               --format "$QUALITY_OPT" \\
               --merge-output-format "$FORMAT" \\
+              --postprocessor-args "Merger+ffmpeg:-max_muxing_queue_size 99999" \\
               --output "$OUTPUT_TEMPLATE" \\
+              --windows-filenames \\
+              --trim-filenames 200 \\
               --write-info-json \\
               --write-thumbnail \\
               --convert-thumbnails jpg \\
@@ -256,11 +338,13 @@ jobs:
               --retries 3 \\
               --fragment-retries 3 \\
               "$URL" || \\
-            # Fallback: try with worst quality if best fails (Shorts compatibility)
             yt-dlp \\
               --format "worstvideo+worstaudio/worst" \\
               --merge-output-format "$FORMAT" \\
+              --postprocessor-args "Merger+ffmpeg:-max_muxing_queue_size 99999" \\
               --output "$OUTPUT_TEMPLATE" \\
+              --windows-filenames \\
+              --trim-filenames 200 \\
               --write-info-json \\
               --write-thumbnail \\
               --convert-thumbnails jpg \\
@@ -396,15 +480,33 @@ jobs:
         run: |
           git config user.name "CNS Downloader"
           git config user.email "cns@system.local"
+          git config core.compression 0
+          git config http.postBuffer 2097152000
+          git config feature.manyFiles true
+          git config pack.threads 0
           
           git restore cookies.txt 2>/dev/null || git checkout HEAD -- cookies.txt 2>/dev/null || true
-          git add -A -- downloads/
+          git add --sparse -A -- downloads/
           
           if git diff --cached --quiet; then
             echo "No changes to commit"
           else
             git commit -m "CNS: Download \$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-            git push origin HEAD:main
+            ok=0
+            for i in 1 2 3 4 5 6; do
+              if git push origin HEAD:main; then
+                ok=1
+                break
+              fi
+              git fetch --no-tags origin main
+              incoming=0
+              c=\$(git rev-list --count HEAD..origin/main 2>/dev/null) && incoming=\$c || true
+              if [ "\${incoming:-0}" -eq 0 ]; then
+                exit 1
+              fi
+              git rebase origin/main || exit 1
+            done
+            [ "\$ok" = 1 ] || exit 1
             echo "Committed and pushed"
           fi
 
@@ -447,6 +549,13 @@ export interface DownloadJob {
   createdAt: string;
   githubRunId?: number;
   githubLiveStep?: string;
+  submitKey?: string;
+  dispatchAt?: string;
+  runHint?: {
+    afterTs: number;
+    quality: string;
+    format: string;
+  };
   meta?: {
     title?: string;
     channel?: string;
@@ -461,9 +570,116 @@ export interface GitHubConfig {
   repo: string;
 }
 
+type CookieHealth = {
+  ok: boolean;
+  reason?: string;
+};
+
 class GitHubClient {
   private config: GitHubConfig | null = null;
   private workflowEnsured = false;
+  private getCache = new Map<string, { ts: number; etag?: string; data: unknown }>();
+  private inFlightGet = new Map<string, Promise<any>>();
+  private hotEndpointCache = new Map<string, { ts: number; data: any }>();
+  private hotEndpointRefresh = new Map<string, Promise<any>>();
+  private workflowEnsureTs = 0;
+  private archiveContentCache = new Map<string, { ts: number; value: { content: string; sha: string } | null }>();
+  private archiveContentInFlight = new Map<string, Promise<{ content: string; sha: string } | null>>();
+  private commitTimeCache = new Map<string, { ts: number; value: string | null }>();
+  private commitTimeInFlight = new Map<string, Promise<string | null>>();
+
+  private getTauriInvoke():
+    | ((command: string, payload?: Record<string, unknown>) => Promise<any>)
+    | null {
+    if (typeof window === 'undefined') return null;
+    if (typeof window.__TAURI__?.invoke === 'function') return window.__TAURI__.invoke;
+    if (typeof window.__TAURI_INVOKE__ === 'function') return window.__TAURI_INVOKE__;
+    if (typeof window.__TAURI__?.tauri?.invoke === 'function') return window.__TAURI__.tauri.invoke;
+    return null;
+  }
+
+  private isDesktopRuntime(): boolean {
+    return this.getTauriInvoke() != null;
+  }
+
+  private cacheKey(path: string, options: RequestInit): string {
+    const method = (options.method || 'GET').toUpperCase();
+    return `${method}:${path}`;
+  }
+
+  private readGetCache(key: string): { etag?: string; data: unknown } | null {
+    const entry = this.getCache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.ts > GET_CACHE_TTL_MS) {
+      this.getCache.delete(key);
+      return null;
+    }
+    return { etag: entry.etag, data: entry.data };
+  }
+
+  private writeGetCache(key: string, etag: string | null, data: unknown) {
+    if (this.getCache.size >= MAX_GET_CACHE) {
+      const firstKey = this.getCache.keys().next().value;
+      if (firstKey) this.getCache.delete(firstKey);
+    }
+    this.getCache.set(key, { ts: Date.now(), etag: etag || undefined, data });
+  }
+
+  private inflightGetKey(tokenScope: string, path: string): string {
+    return `${tokenScope}:${path}`;
+  }
+
+  private getHotCache<T>(key: string, ttlMs: number): T | null {
+    const hit = this.hotEndpointCache.get(key);
+    if (!hit) return null;
+    if (Date.now() - hit.ts > ttlMs) return null;
+    return hit.data as T;
+  }
+
+  private setHotCache(key: string, data: any) {
+    this.hotEndpointCache.set(key, { ts: Date.now(), data });
+  }
+
+  async hydrateSecureConfig(): Promise<GitHubConfig | null> {
+    const stored = storage.get('cns_github_config');
+    if (!stored) return null;
+    const parsed = safeJSONParse<unknown>(stored, null);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const base = parsed as Record<string, unknown>;
+    if (typeof base.owner !== 'string' || typeof base.repo !== 'string' || typeof base.token !== 'string') {
+      return null;
+    }
+    if (base.token !== SECURE_TOKEN_PLACEHOLDER) {
+      if (isValidConfig(parsed)) {
+        this.config = parsed;
+        return parsed;
+      }
+      return null;
+    }
+    let token: string | null = null;
+    try {
+      token = sessionStorage.getItem(SESSION_TOKEN_KEY);
+    } catch {
+      token = null;
+    }
+    if (!token) {
+      const invoke = this.getTauriInvoke();
+      if (invoke) {
+        try {
+          const secureToken = await invoke('get_secure_github_token');
+          if (typeof secureToken === 'string' && secureToken.length > 0) {
+            token = secureToken;
+            sessionStorage.setItem(SESSION_TOKEN_KEY, secureToken);
+          }
+        } catch {
+        }
+      }
+    }
+    if (!token) return null;
+    const config: GitHubConfig = { token, owner: base.owner, repo: base.repo };
+    this.config = config;
+    return config;
+  }
 
   setConfig(config: GitHubConfig) {
     if (!isValidConfig(config)) {
@@ -476,7 +692,19 @@ class GitHubClient {
     }
     this.config = config;
     this.workflowEnsured = false;
-    storage.set('cns_github_config', JSON.stringify(config));
+    if (this.isDesktopRuntime()) {
+      storage.set('cns_github_config', JSON.stringify({ owner: config.owner, repo: config.repo, token: SECURE_TOKEN_PLACEHOLDER }));
+      try {
+        sessionStorage.setItem(SESSION_TOKEN_KEY, config.token);
+      } catch {
+      }
+      const invoke = this.getTauriInvoke();
+      if (invoke) {
+        void invoke('set_secure_github_token', { token: config.token }).catch(() => {});
+      }
+    } else {
+      storage.set('cns_github_config', JSON.stringify(config));
+    }
     logger.info('[GitHub] Config saved', { owner: config.owner, repo: config.repo });
   }
 
@@ -489,6 +717,29 @@ class GitHubClient {
     const parsed = safeJSONParse<unknown>(stored, null);
 
     if (!isValidConfig(parsed)) {
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        (parsed as Record<string, unknown>).token === SECURE_TOKEN_PLACEHOLDER &&
+        typeof (parsed as Record<string, unknown>).owner === 'string' &&
+        typeof (parsed as Record<string, unknown>).repo === 'string'
+      ) {
+        let sessToken: string | null = null;
+        try {
+          sessToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
+        } catch {
+          sessToken = null;
+        }
+        if (sessToken && typeof sessToken === 'string') {
+          const cfg: GitHubConfig = {
+            owner: (parsed as Record<string, string>).owner,
+            repo: (parsed as Record<string, string>).repo,
+            token: sessToken,
+          };
+          this.config = cfg;
+          return cfg;
+        }
+      }
       logger.error('[GitHub] Invalid or corrupted config found, clearing', {
         ownerType: typeof (parsed as Record<string, unknown>)?.owner,
         repoType: typeof (parsed as Record<string, unknown>)?.repo,
@@ -507,6 +758,14 @@ class GitHubClient {
     this.config = null;
     this.workflowEnsured = false;
     storage.remove('cns_github_config');
+    try {
+      sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    } catch {
+    }
+    const invoke = this.getTauriInvoke();
+    if (invoke) {
+      void invoke('clear_secure_github_token').catch(() => {});
+    }
     logger.info('[GitHub] Config cleared');
   }
 
@@ -539,10 +798,14 @@ class GitHubClient {
 
   private async requestWithToken(token: string, path: string, options: RequestInit = {}, retries: number = 3): Promise<any> {
     const url = `${API_BASE}${path}`;
+    const method = (options.method || 'GET').toUpperCase();
+    const key = this.cacheKey(path, { ...options, method });
+    const cached = method === 'GET' ? this.readGetCache(key) : null;
     const headers = {
       'Accept': 'application/vnd.github.v3+json',
       'Authorization': `token ${token}`,
       'User-Agent': 'CNS-YouTube-Downloader',
+      ...(cached?.etag ? { 'If-None-Match': cached.etag } : {}),
       ...options.headers,
     };
 
@@ -552,6 +815,9 @@ class GitHubClient {
       try {
         const response = await fetch(url, { ...options, headers });
 
+        if (response.status === 304 && cached) {
+          return cached.data;
+        }
         if (!response.ok) {
           const errorData = (await response.json().catch(() => ({}))) as Record<string, unknown>;
           const message = (typeof errorData.message === 'string' && errorData.message) || `HTTP ${response.status}`;
@@ -572,8 +838,14 @@ class GitHubClient {
           }
           if (response.status === 403) {
             const isRateLimit = String(errorData.message ?? '').includes('rate limit');
+            const resetRaw = response.headers.get('x-ratelimit-reset');
+            const resetTs = resetRaw && /^\d+$/.test(resetRaw) ? Number(resetRaw) * 1000 : null;
+            const retryHint =
+              isRateLimit && resetTs
+                ? ` Retry after ${new Date(resetTs).toISOString()}.`
+                : '';
             throw new CNSError(
-              isRateLimit ? `Rate limited: ${message}` : `Forbidden: ${message}`,
+              isRateLimit ? `Rate limited: ${message}.${retryHint}` : `Forbidden: ${message}`,
               isRateLimit ? ErrorCodes.RATE_LIMITED : ErrorCodes.AUTH_FAILED,
               isRateLimit
             );
@@ -592,7 +864,11 @@ class GitHubClient {
           return null;
         }
 
-        return response.json();
+        const data = await response.json();
+        if (method === 'GET') {
+          this.writeGetCache(key, response.headers.get('etag'), data);
+        }
+        return data;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
 
@@ -614,10 +890,14 @@ class GitHubClient {
     if (!config) throw new CNSError('GitHub config not set', ErrorCodes.CONFIG_MISSING, false);
 
     const url = `${API_BASE}${path}`;
+    const method = (options.method || 'GET').toUpperCase();
+    const key = this.cacheKey(path, { ...options, method });
+    const cached = method === 'GET' ? this.readGetCache(key) : null;
     const headers = {
       'Accept': 'application/vnd.github.v3+json',
       'Authorization': `token ${config.token}`,
       'User-Agent': 'CNS-YouTube-Downloader',
+      ...(cached?.etag ? { 'If-None-Match': cached.etag } : {}),
       ...options.headers,
     };
 
@@ -627,6 +907,9 @@ class GitHubClient {
       try {
         const response = await fetch(url, { ...options, headers });
         
+        if (response.status === 304 && cached) {
+          return cached.data;
+        }
         if (!response.ok) {
           const errorData = (await response.json().catch(() => ({}))) as Record<string, unknown>;
           const message = (typeof errorData.message === 'string' && errorData.message) || `HTTP ${response.status}`;
@@ -647,8 +930,14 @@ class GitHubClient {
           }
           if (response.status === 403) {
             const isRateLimit = String(errorData.message ?? '').includes('rate limit');
+            const resetRaw = response.headers.get('x-ratelimit-reset');
+            const resetTs = resetRaw && /^\d+$/.test(resetRaw) ? Number(resetRaw) * 1000 : null;
+            const retryHint =
+              isRateLimit && resetTs
+                ? ` Retry after ${new Date(resetTs).toISOString()}.`
+                : '';
             throw new CNSError(
-              isRateLimit ? `Rate limited: ${message}` : `Forbidden: ${message}`,
+              isRateLimit ? `Rate limited: ${message}.${retryHint}` : `Forbidden: ${message}`,
               isRateLimit ? ErrorCodes.RATE_LIMITED : ErrorCodes.AUTH_FAILED,
               isRateLimit
             );
@@ -667,7 +956,11 @@ class GitHubClient {
           return null;
         }
 
-        return response.json();
+        const data = await response.json();
+        if (method === 'GET') {
+          this.writeGetCache(key, response.headers.get('etag'), data);
+        }
+        return data;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
 
@@ -688,13 +981,25 @@ class GitHubClient {
     return this.requestWithRetry(path, options, 3);
   }
 
+  private async requestCoalesced(path: string, tokenScope: string): Promise<any> {
+    const key = this.inflightGetKey(tokenScope, path);
+    const existing = this.inFlightGet.get(key);
+    if (existing) return existing;
+    const p = this.request(path).finally(() => {
+      this.inFlightGet.delete(key);
+    });
+    this.inFlightGet.set(key, p);
+    return p;
+  }
+
   async triggerWorkflow(url: string, quality: string, format: string): Promise<number> {
     const config = this.getConfig();
     if (!config) throw new CNSError('GitHub config not set', ErrorCodes.CONFIG_MISSING, false);
 
-    if (!this.workflowEnsured) {
+    if (!this.workflowEnsured || Date.now() - this.workflowEnsureTs > 120000) {
       await this.ensureWorkflow(config.token, config.owner, config.repo);
       this.workflowEnsured = true;
+      this.workflowEnsureTs = Date.now();
     }
 
     let targetHost = '';
@@ -786,15 +1091,76 @@ class GitHubClient {
     }
   }
 
+  private async triggerWorkflowWithTimeout(
+    url: string,
+    quality: string,
+    format: string,
+    timeoutMs: number
+  ): Promise<number> {
+    const run = this.triggerWorkflow(url, quality, format);
+    let timer = 0;
+    const timeout = new Promise<number>((_, reject) => {
+      timer = window.setTimeout(() => reject(new Error('Dispatch timeout')), timeoutMs);
+    });
+    try {
+      return await Promise.race([run, timeout]);
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
+  async triggerWorkflowFast(
+    url: string,
+    quality: string,
+    format: string
+  ): Promise<{ status: number; dispatchAt: string; runHint: { afterTs: number; quality: string; format: string } }> {
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const status = await this.triggerWorkflowWithTimeout(url, quality, format, 12000);
+        const now = Date.now();
+        return {
+          status,
+          dispatchAt: new Date(now).toISOString(),
+          runHint: { afterTs: now - 5000, quality, format },
+        };
+      } catch (err) {
+        lastErr = err;
+        if (attempt < 2) {
+          const wait = 260 + Math.floor(Math.random() * 440) + attempt * 300;
+          await new Promise((resolve) => setTimeout(resolve, wait));
+        }
+      }
+    }
+    throw (lastErr instanceof Error ? lastErr : new Error('Workflow dispatch failed'));
+  }
+
   async getWorkflowRuns(): Promise<any[]> {
     const config = this.getConfig();
     if (!config) throw new Error('GitHub config not set');
+    const endpointKey = `runs:${config.owner}/${config.repo}`;
+    const path = `/repos/${config.owner}/${config.repo}/actions/runs?workflow_id=download.yml&per_page=25`;
+    const tokenScope = `${config.owner}/${config.repo}`;
+    const cached = this.getHotCache<any[]>(endpointKey, 2500);
+    if (cached) {
+      if (!this.hotEndpointRefresh.has(endpointKey)) {
+        const refresh = this.requestCoalesced(path, tokenScope)
+          .then((data) => {
+            const runs = data.workflow_runs || [];
+            this.setHotCache(endpointKey, runs);
+            return runs;
+          })
+          .finally(() => this.hotEndpointRefresh.delete(endpointKey));
+        this.hotEndpointRefresh.set(endpointKey, refresh);
+      }
+      return cached;
+    }
 
     try {
-      const data = await this.request(
-        `/repos/${config.owner}/${config.repo}/actions/runs?workflow_id=download.yml&per_page=25`
-      );
-      return data.workflow_runs || [];
+      const data = await this.requestCoalesced(path, tokenScope);
+      const runs = data.workflow_runs || [];
+      this.setHotCache(endpointKey, runs);
+      return runs;
     } catch (err) {
       logger.warn('[GitHub] getWorkflowRuns failed', {
         error: err,
@@ -808,11 +1174,28 @@ class GitHubClient {
   async getWorkflowRunJobs(runId: number): Promise<any[]> {
     const config = this.getConfig();
     if (!config) throw new Error('GitHub config not set');
+    const endpointKey = `runjobs:${config.owner}/${config.repo}:${runId}`;
+    const path = `/repos/${config.owner}/${config.repo}/actions/runs/${runId}/jobs?per_page=100`;
+    const tokenScope = `${config.owner}/${config.repo}`;
+    const cached = this.getHotCache<any[]>(endpointKey, 2200);
+    if (cached) {
+      if (!this.hotEndpointRefresh.has(endpointKey)) {
+        const refresh = this.requestCoalesced(path, tokenScope)
+          .then((data) => {
+            const jobs = data.jobs || [];
+            this.setHotCache(endpointKey, jobs);
+            return jobs;
+          })
+          .finally(() => this.hotEndpointRefresh.delete(endpointKey));
+        this.hotEndpointRefresh.set(endpointKey, refresh);
+      }
+      return cached;
+    }
 
-    const data = await this.request(
-      `/repos/${config.owner}/${config.repo}/actions/runs/${runId}/jobs?per_page=100`
-    );
-    return data.jobs || [];
+    const data = await this.requestCoalesced(path, tokenScope);
+    const jobs = data.jobs || [];
+    this.setHotCache(endpointKey, jobs);
+    return jobs;
   }
 
   async getJobLogsText(jobId: number): Promise<string | null> {
@@ -851,12 +1234,29 @@ class GitHubClient {
   async getDownloads(): Promise<any[]> {
     const config = this.getConfig();
     if (!config) throw new Error('GitHub config not set');
+    const endpointKey = `downloads:${config.owner}/${config.repo}`;
+    const path = `/repos/${config.owner}/${config.repo}/contents/downloads`;
+    const tokenScope = `${config.owner}/${config.repo}`;
+    const cached = this.getHotCache<any[]>(endpointKey, 2500);
+    if (cached) {
+      if (!this.hotEndpointRefresh.has(endpointKey)) {
+        const refresh = this.requestCoalesced(path, tokenScope)
+          .then((data) => {
+            const list = Array.isArray(data) ? data : [];
+            this.setHotCache(endpointKey, list);
+            return list;
+          })
+          .finally(() => this.hotEndpointRefresh.delete(endpointKey));
+        this.hotEndpointRefresh.set(endpointKey, refresh);
+      }
+      return cached;
+    }
 
     try {
-      const data = await this.request(
-        `/repos/${config.owner}/${config.repo}/contents/downloads`
-      );
-      return Array.isArray(data) ? data : [];
+      const data = await this.requestCoalesced(path, tokenScope);
+      const list = Array.isArray(data) ? data : [];
+      this.setHotCache(endpointKey, list);
+      return list;
     } catch (err) {
       logger.warn('[GitHub] downloads listing failed', {
         error: err,
@@ -871,17 +1271,33 @@ class GitHubClient {
   async getFileCommitTime(path: string): Promise<string | null> {
     const config = this.getConfig();
     if (!config) return null;
-    try {
-      const data = await this.request(
-        `/repos/${config.owner}/${config.repo}/commits?path=${encodeURIComponent(path)}&per_page=1`
-      );
-      if (Array.isArray(data) && data.length > 0) {
-        return data[0]?.commit?.committer?.date ?? data[0]?.commit?.author?.date ?? null;
-      }
-      return null;
-    } catch {
-      return null;
+    const key = `${config.owner}/${config.repo}:${path}`;
+    const cached = this.commitTimeCache.get(key);
+    if (cached && Date.now() - cached.ts < 20_000) {
+      return cached.value;
     }
+    const inFlight = this.commitTimeInFlight.get(key);
+    if (inFlight) return inFlight;
+    const load = (async () => {
+      try {
+        const data = await this.request(
+          `/repos/${config.owner}/${config.repo}/commits?path=${encodeURIComponent(path)}&per_page=1`
+        );
+        let v: string | null = null;
+        if (Array.isArray(data) && data.length > 0) {
+          v = data[0]?.commit?.committer?.date ?? data[0]?.commit?.author?.date ?? null;
+        }
+        this.commitTimeCache.set(key, { ts: Date.now(), value: v });
+        return v;
+      } catch {
+        this.commitTimeCache.set(key, { ts: Date.now(), value: null });
+        return null;
+      } finally {
+        this.commitTimeInFlight.delete(key);
+      }
+    })();
+    this.commitTimeInFlight.set(key, load);
+    return load;
   }
 
   private async downloadBlobWithTimeout(url: string, headers: Record<string, string>, timeoutMs: number): Promise<Response> {
@@ -954,6 +1370,40 @@ class GitHubClient {
     return response.blob();
   }
 
+  async preflightDownload(path: string): Promise<{ ok: boolean; reason?: string }> {
+    const config = this.getConfig();
+    if (!config) return { ok: false, reason: 'GitHub config not set' };
+    try {
+      const data = await this.request(
+        `/repos/${config.owner}/${config.repo}/contents/${encodeURIComponent(path).replace(/%2F/g, '/')}`
+      );
+      if (!data || typeof data !== 'object') return { ok: false, reason: 'File metadata unavailable' };
+      return { ok: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, reason: msg };
+    }
+  }
+
+  async downloadFileViaNative(path: string, fileName: string): Promise<string | null> {
+    const config = this.getConfig();
+    if (!config) return null;
+    const invoke = this.getTauriInvoke();
+    if (!invoke) return null;
+    try {
+      const out = await invoke('download_github_file', {
+        owner: config.owner,
+        repo: config.repo,
+        token: config.token,
+        path,
+        fileName,
+      });
+      return typeof out === 'string' && out.length > 0 ? out : null;
+    } catch {
+      return null;
+    }
+  }
+
   async deleteFile(path: string, sha: string): Promise<void> {
     const config = this.getConfig();
     if (!config) throw new Error('GitHub config not set');
@@ -974,26 +1424,40 @@ class GitHubClient {
   async getFileContent(path: string): Promise<{ content: string; sha: string } | null> {
     const config = this.getConfig();
     if (!config) throw new Error('GitHub config not set');
-
-    try {
-      const data = await this.request(
-        `/repos/${config.owner}/${config.repo}/contents/${path}`
-      );
-      // Handle Unicode base64 decoding properly
-      const base64Content = data.content.replace(/\s/g, '');
-      const binaryString = atob(base64Content);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const content = new TextDecoder('utf-8').decode(bytes);
-      return {
-        content,
-        sha: data.sha,
-      };
-    } catch {
-      return null;
+    const key = `${config.owner}/${config.repo}:${path}`;
+    const cached = this.archiveContentCache.get(key);
+    if (cached && Date.now() - cached.ts < 25_000) {
+      return cached.value;
     }
+    const inFlight = this.archiveContentInFlight.get(key);
+    if (inFlight) return inFlight;
+    const load = (async () => {
+      try {
+        const data = await this.request(
+          `/repos/${config.owner}/${config.repo}/contents/${path}`
+        );
+        const base64Content = data.content.replace(/\s/g, '');
+        const binaryString = atob(base64Content);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+        const content = new TextDecoder('utf-8').decode(bytes);
+        const value = { content, sha: data.sha };
+        this.archiveContentCache.set(key, { ts: Date.now(), value });
+        return value;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message.toLowerCase() : '';
+        if (msg.includes('not found') || msg.includes('404') || msg.includes('409')) {
+          this.archiveContentCache.set(key, { ts: Date.now(), value: null });
+        }
+        return null;
+      } finally {
+        this.archiveContentInFlight.delete(key);
+      }
+    })();
+    this.archiveContentInFlight.set(key, load);
+    return load;
   }
 
   async connectExistingRepo(token: string, repoName: string = 'cns-downloads'): Promise<GitHubConfig> {
@@ -1040,12 +1504,16 @@ class GitHubClient {
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       const message = String((error as Record<string, unknown>).message || '');
-      if (
-        response.status === 422 &&
-        message.toLowerCase().includes('name already exists on this account')
-      ) {
+      if (response.status === 409 || response.status === 422) {
         const user = await this.requestWithToken(token, '/user');
-        return { owner: user.login, repo: name, created: false };
+        const canBeExistingName = message.toLowerCase().includes('name already exists on this account');
+        if (response.status === 409 || canBeExistingName) {
+          try {
+            await this.requestWithToken(token, `/repos/${user.login}/${name}`);
+            return { owner: user.login, repo: name, created: false };
+          } catch {
+          }
+        }
       }
       throw new Error(error.message || `Failed to create repo: HTTP ${response.status}`);
     }
@@ -1088,7 +1556,11 @@ class GitHubClient {
     const { owner, repo, created } = await this.createRepo(repoName, token);
     
     // Step 2: Setup workflow
-    await this.setupWorkflow(token, owner, repo);
+    if (created) {
+      await this.setupWorkflow(token, owner, repo);
+    } else {
+      await this.ensureWorkflow(token, owner, repo);
+    }
     
     // Step 3: Save config
     const config: GitHubConfig = { token, owner, repo };
@@ -1100,6 +1572,58 @@ class GitHubClient {
   // Cookies management
   getCookies(): string | null {
     return storage.get('cns_cookies');
+  }
+
+  assessCookieText(cookiesContent: string): CookieHealth {
+    const lines = cookiesContent.split(/\r?\n/);
+    const nowSec = Math.floor(Date.now() / 1000);
+    let hasCookieRows = false;
+    let hasLiveAuthCookie = false;
+    const authNames = new Set([
+      'sid',
+      'hsid',
+      'ssid',
+      'apisid',
+      'sapISID'.toLowerCase(),
+      '__secure-1psid',
+      '__secure-3psid',
+      '__secure-1psidts',
+      '__secure-3psidts',
+      'login_info',
+    ]);
+
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line || line.startsWith('#')) continue;
+      const parts = line.split('\t');
+      if (parts.length < 7) continue;
+      hasCookieRows = true;
+      const domain = (parts[0] || '').toLowerCase();
+      const expiry = Number(parts[4] || 0);
+      const name = (parts[5] || '').toLowerCase();
+      const isYoutubeDomain = domain.includes('youtube.com') || domain.includes('google.com');
+      if (!isYoutubeDomain) continue;
+      if (!authNames.has(name)) continue;
+      const live = !Number.isFinite(expiry) || expiry <= 0 || expiry > nowSec;
+      if (live) {
+        hasLiveAuthCookie = true;
+        break;
+      }
+    }
+
+    if (!hasCookieRows) {
+      return { ok: false, reason: 'COOKIE_FORMAT_INVALID' };
+    }
+    if (!hasLiveAuthCookie) {
+      return { ok: false, reason: 'COOKIE_EXPIRED_LOCAL' };
+    }
+    return { ok: true };
+  }
+
+  assessStoredCookies(): CookieHealth {
+    const content = this.getCookies();
+    if (!content || !content.trim()) return { ok: true };
+    return this.assessCookieText(content);
   }
 
   clearCookies(): void {

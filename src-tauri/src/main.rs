@@ -63,9 +63,111 @@ fn export_logs_to_file(window: tauri::Window, content: String) -> Result<String,
     }
 }
 
+#[tauri::command]
+fn set_secure_github_token(token: String) -> Result<(), String> {
+    let entry = keyring::Entry::new("cns", "github_token")
+        .map_err(|err| format!("Failed to create keyring entry: {}", err))?;
+    entry
+        .set_password(&token)
+        .map_err(|err| format!("Failed to store token in keyring: {}", err))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_secure_github_token() -> Result<String, String> {
+    let entry = keyring::Entry::new("cns", "github_token")
+        .map_err(|err| format!("Failed to create keyring entry: {}", err))?;
+    entry
+        .get_password()
+        .map_err(|err| format!("Failed to read token from keyring: {}", err))
+}
+
+#[tauri::command]
+fn clear_secure_github_token() -> Result<(), String> {
+    let entry = keyring::Entry::new("cns", "github_token")
+        .map_err(|err| format!("Failed to create keyring entry: {}", err))?;
+    match entry.delete_credential() {
+        Ok(_) => Ok(()),
+        Err(_) => Ok(()),
+    }
+}
+
+#[tauri::command]
+async fn download_github_file(
+    window: tauri::Window,
+    owner: String,
+    repo: String,
+    token: String,
+    path: String,
+    file_name: String,
+) -> Result<String, String> {
+    let encoded_path = path
+        .split('/')
+        .map(|segment| urlencoding::encode(segment).to_string())
+        .collect::<Vec<String>>()
+        .join("/");
+    let url = format!(
+        "https://api.github.com/repos/{}/{}/contents/{}",
+        owner, repo, encoded_path
+    );
+    let client = reqwest::Client::new();
+    let mut response = client
+        .get(url)
+        .header("Accept", "application/vnd.github.raw")
+        .header("Authorization", format!("token {}", token))
+        .header("User-Agent", "CNS-YouTube-Downloader")
+        .send()
+        .await
+        .map_err(|err| format!("E_NET_REQ: {}", err))?;
+    if !response.status().is_success() {
+        return Err(format!("E_HTTP_{}: download failed", response.status()));
+    }
+    let resolver = window.app_handle().path_resolver();
+    let mut target = resolver
+        .download_dir()
+        .or_else(|| resolver.app_dir())
+        .ok_or_else(|| "E_DIR_RESOLVE: cannot resolve writable directory".to_string())?;
+    if let Err(err) = fs::create_dir_all(&target) {
+        return Err(format!("E_DIR_CREATE: {}: {}", target.display(), err));
+    }
+    target.push(file_name);
+    let mut tmp_path = target.clone();
+    let file_name_tmp = match tmp_path.file_name().and_then(|s| s.to_str()) {
+        Some(name) => format!("{}.part", name),
+        None => "download.part".to_string(),
+    };
+    tmp_path.set_file_name(file_name_tmp);
+    let mut output = fs::File::create(&tmp_path)
+        .map_err(|err| format!("E_FILE_CREATE: {}: {}", tmp_path.display(), err))?;
+    loop {
+        let chunk = response
+            .chunk()
+            .await
+            .map_err(|err| format!("E_STREAM_READ: {}", err))?;
+        match chunk {
+            Some(bytes) => output
+                .write_all(&bytes)
+                .map_err(|err| format!("E_FILE_WRITE: {}: {}", tmp_path.display(), err))?,
+            None => break,
+        }
+    }
+    output
+        .flush()
+        .map_err(|err| format!("E_FILE_FLUSH: {}: {}", tmp_path.display(), err))?;
+    fs::rename(&tmp_path, &target)
+        .map_err(|err| format!("E_FILE_RENAME: {} -> {}: {}", tmp_path.display(), target.display(), err))?;
+    Ok(target.to_string_lossy().to_string())
+}
+
 fn main() {
   tauri::Builder::default()
-    .invoke_handler(tauri::generate_handler![export_logs_to_file])
+    .invoke_handler(tauri::generate_handler![
+      export_logs_to_file,
+      set_secure_github_token,
+      get_secure_github_token,
+      clear_secure_github_token,
+      download_github_file
+    ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

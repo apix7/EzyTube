@@ -19,6 +19,7 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
   const [cookies, setCookies] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [setupSuccess, setSetupSuccess] = useState<string | null>(null);
   const [isAutoSetup, setIsAutoSetup] = useState(false);
   const [setupStep, setSetupStep] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'settings' | 'diagnostics'>('settings');
@@ -40,6 +41,7 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
         setRepoName(config.repo);
       }
       setError(null);
+      setSetupSuccess(null);
       if (cookiesOkTimerRef.current != null) {
         window.clearTimeout(cookiesOkTimerRef.current);
         cookiesOkTimerRef.current = null;
@@ -70,11 +72,14 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
     setIsSaving(true);
     setError(null);
     try {
+      const nextRepo = repoName.trim() || 'cns-downloads';
       const config = github.getConfig();
       if (config) {
-        github.setConfig({ token, owner: config.owner, repo: repoName.trim() || config.repo });
+        const next = { token, owner: config.owner, repo: nextRepo };
+        github.setConfig(next);
+        await github.ensureWorkflow(token, next.owner, next.repo);
       } else {
-        const attached = await github.connectExistingRepo(token, repoName.trim() || 'cns-downloads');
+        const attached = await github.connectExistingRepo(token, nextRepo);
         await github.ensureWorkflow(token, attached.owner, attached.repo);
       }
       onConfigChanged?.();
@@ -99,6 +104,12 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
   const handleSaveCookies = async () => {
     const trimmed = cookies.trim();
     if (!trimmed) return;
+    const cookieHealth = github.assessCookieText(trimmed);
+    if (!cookieHealth.ok) {
+      setCookiesUploadState('idle');
+      setError(toPersianErrorMessage(cookieHealth.reason || 'COOKIE_EXPIRED_LOCAL'));
+      return;
+    }
 
     if (!github.getConfig() && !token.trim()) {
       setError('توکن گیت‌هاب الزامی است');
@@ -142,15 +153,14 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
 
     setIsAutoSetup(true);
     setError(null);
+    setSetupSuccess(null);
     setSetupStep(fa.settings.creatingRepo);
 
     try {
-      const result = await github.autoSetup(token, 'cns-downloads');
+      const result = await github.autoSetup(token, repoName.trim() || 'cns-downloads');
       setSetupStep(result.repoCreated ? fa.settings.setupDone : fa.settings.repoUpdated);
+      setSetupSuccess(result.repoCreated ? fa.settings.setupDoneMessage : fa.settings.repoUpdatedMessage);
       onConfigChanged?.();
-      setTimeout(() => {
-        onClose();
-      }, 1500);
     } catch (err) {
       setError(toPersianErrorMessage(err));
     } finally {
@@ -221,11 +231,10 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
             </span>
           </div>
 
-          {activeTab === 'diagnostics' ? (
-            <DiagnosticsPanel isOpen={isOpen} />
-          ) : (
-          <div className="grid gap-3 md:grid-cols-2">
-            <section className="settings-section">
+          <div className="settings-tab-panels">
+            <div className={cn('settings-tab-panel', activeTab === 'settings' && 'active')} aria-hidden={activeTab !== 'settings'}>
+              <div className="grid gap-3 md:grid-cols-2">
+                <section className="settings-section">
               <div className="settings-section-head">
                 <span className="settings-step">۱</span>
                 <div>
@@ -277,7 +286,7 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
                   <span dir="ltr">{fa.settings.autoSetup}</span>
                 </div>
                 <div className="helper-copy mt-1 !text-[11px]" dir="ltr">
-                  اگر مخزن آماده ندارید، این گزینه مخزن و workflow را می‌سازد.
+                  اگر مخزن آماده ندارید، این گزینه مخزن و جریان‌کار دانلود را می‌سازد.
                 </div>
                 <button
                   onClick={handleAutoSetup}
@@ -295,6 +304,12 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
                 <div className="summary-strip warning flex items-center gap-2 text-xs text-cns-warning" dir="auto">
                   <AlertCircle size={14} />
                   <span dir="auto">{error}</span>
+                </div>
+              )}
+              {setupSuccess && (
+                <div className="summary-strip flex items-center gap-2 text-xs text-cns-primary" dir="auto">
+                  <Zap size={14} />
+                  <span dir="auto">{setupSuccess}</span>
                 </div>
               )}
 
@@ -317,9 +332,9 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
                   </button>
                 )}
               </div>
-            </section>
+                </section>
 
-            <section className="settings-section">
+                <section className="settings-section">
               <div className="settings-section-head">
                 <span className="settings-step">۲</span>
                 <div>
@@ -369,9 +384,13 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
               >
                 {fa.settings.extensionLink}
               </a>
-            </section>
+                </section>
+              </div>
+            </div>
+            <div className={cn('settings-tab-panel', activeTab === 'diagnostics' && 'active')} aria-hidden={activeTab !== 'diagnostics'}>
+              <DiagnosticsPanel isOpen={isOpen} />
+            </div>
           </div>
-          )}
         </div>
       </div>
     </div>

@@ -39,6 +39,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 1
 
     - name: Setup Python
       uses: actions/setup-python@v5
@@ -84,19 +85,37 @@ jobs:
         echo "Quality: $QUALITY"
         echo "Format: $FORMAT"
 
-        # Build quality options - more flexible for Shorts
+        mkdir -p downloads/.tmp
+        export TMPDIR="${GITHUB_WORKSPACE}/downloads/.tmp"
+
         case "$QUALITY" in
           "best")
-            QUALITY_OPT="bestvideo+bestaudio/best"
+            if [ "$FORMAT" = "mp4" ]; then
+              QUALITY_OPT="bestvideo[vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc1]+bestaudio/bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best"
+            else
+              QUALITY_OPT="bestvideo+bestaudio/best"
+            fi
             ;;
           "1080p")
-            QUALITY_OPT="bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+            if [ "$FORMAT" = "mp4" ]; then
+              QUALITY_OPT="bestvideo[vcodec^=avc1][height<=1080]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc1][height<=1080]+bestaudio/bestvideo[height<=1080][ext=mp4]+bestaudio/bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+            else
+              QUALITY_OPT="bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+            fi
             ;;
           "720p")
-            QUALITY_OPT="bestvideo[height<=720]+bestaudio/best[height<=720]"
+            if [ "$FORMAT" = "mp4" ]; then
+              QUALITY_OPT="bestvideo[vcodec^=avc1][height<=720]+bestaudio[ext=m4a]/bestvideo[vcodec^=avc1][height<=720]+bestaudio/bestvideo[height<=720][ext=mp4]+bestaudio/bestvideo[height<=720]+bestaudio/best[height<=720]"
+            else
+              QUALITY_OPT="bestvideo[height<=720]+bestaudio/best[height<=720]"
+            fi
             ;;
           "480p")
-            QUALITY_OPT="bestvideo[height<=480]+bestaudio/best[height<=480]/worst"
+            if [ "$FORMAT" = "mp4" ]; then
+              QUALITY_OPT="bestvideo[vcodec^=avc1][height<=480]+bestaudio[ext=m4a]/bestvideo[height<=480]+bestaudio/best[height<=480]/worst"
+            else
+              QUALITY_OPT="bestvideo[height<=480]+bestaudio/best[height<=480]/worst"
+            fi
             ;;
           "audio")
             QUALITY_OPT="bestaudio/best"
@@ -121,6 +140,8 @@ jobs:
             --audio-format mp3 \
             --audio-quality 0 \
             --output "$OUTPUT_TEMPLATE" \
+            --windows-filenames \
+            --trim-filenames 200 \
             --write-info-json \
             --write-thumbnail \
             --convert-thumbnails jpg \
@@ -134,7 +155,10 @@ jobs:
           yt-dlp \
             --format "$QUALITY_OPT" \
             --merge-output-format "$FORMAT" \
+            --postprocessor-args "Merger+ffmpeg:-max_muxing_queue_size 99999" \
             --output "$OUTPUT_TEMPLATE" \
+            --windows-filenames \
+            --trim-filenames 200 \
             --write-info-json \
             --write-thumbnail \
             --convert-thumbnails jpg \
@@ -143,11 +167,13 @@ jobs:
             --retries 3 \
             --fragment-retries 3 \
             "$URL" || \
-          # Fallback: try with worst quality if best fails (Shorts compatibility)
           yt-dlp \
             --format "worstvideo+worstaudio/worst" \
             --merge-output-format "$FORMAT" \
+            --postprocessor-args "Merger+ffmpeg:-max_muxing_queue_size 99999" \
             --output "$OUTPUT_TEMPLATE" \
+            --windows-filenames \
+            --trim-filenames 200 \
             --write-info-json \
             --write-thumbnail \
             --convert-thumbnails jpg \
@@ -288,6 +314,10 @@ jobs:
         set -e
         git config user.name "CNS Downloader"
         git config user.email "cns@system.local"
+        git config core.compression 0
+        git config http.postBuffer 2097152000
+        git config feature.manyFiles true
+        git config pack.threads 0
 
         git restore cookies.txt 2>/dev/null || git checkout HEAD -- cookies.txt 2>/dev/null || true
         git add -A -- downloads/
@@ -296,7 +326,21 @@ jobs:
           echo "No changes to commit"
         else
           git commit -m "CNS: Download $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-          git push origin HEAD:main
+          ok=0
+          for i in 1 2 3 4 5 6; do
+            if git push origin HEAD:main; then
+              ok=1
+              break
+            fi
+            git fetch --no-tags origin main
+            incoming=0
+            c=$(git rev-list --count HEAD..origin/main 2>/dev/null) && incoming=$c || true
+            if [ "${incoming:-0}" -eq 0 ]; then
+              exit 1
+            fi
+            git rebase origin/main || exit 1
+          done
+          [ "$ok" = 1 ] || exit 1
           echo "Committed and pushed"
         fi
 

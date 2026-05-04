@@ -74,9 +74,16 @@ export function MatrixRain({
 
     let last = 0;
     let raf = 0;
+    let paused = document.hidden;
+
+    const onVisibility = () => {
+      paused = document.hidden;
+    };
+    document.addEventListener('visibilitychange', onVisibility);
 
     const tick = (now: number) => {
       raf = window.requestAnimationFrame(tick);
+      if (paused) return;
       const isBurst = now < burstUntil;
       const interval = isBurst ? burstIntervalMs : intervalMs;
       if (now - last < interval) return;
@@ -111,6 +118,7 @@ export function MatrixRain({
       window.cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
       window.removeEventListener(burstEvent, startBurst);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [
     fontSize,

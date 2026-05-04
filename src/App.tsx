@@ -64,6 +64,7 @@ function App() {
   const [hasConfig, setHasConfig] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const jobsRef = useRef(jobs);
+  const persistTimerRef = useRef<number | null>(null);
   jobsRef.current = jobs;
 
   const archive = useArchive({ enabled: hasConfig });
@@ -77,32 +78,58 @@ function App() {
 
   useEffect(() => {
     logger.info('App startup: config initialization start');
-    try {
-      const config = github.getConfig();
-      const configAvailable = !!config;
-      setHasConfig(configAvailable);
-      logger.info('App startup: config initialization complete', {
-        hasConfig: configAvailable,
-        repositoryFullName: config ? `${config.owner}/${config.repo}` : null,
-      });
-    } catch (err) {
-      const msg = toPersianErrorMessage(err);
-      logger.error('App startup: config check failed', { error: msg });
-      setInitError(msg);
-      setHasConfig(false);
-    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        await github.hydrateSecureConfig();
+        const config = github.getConfig();
+        const configAvailable = !!config;
+        if (cancelled) return;
+        setHasConfig(configAvailable);
+        logger.info('App startup: config initialization complete', {
+          hasConfig: configAvailable,
+          repositoryFullName: config ? `${config.owner}/${config.repo}` : null,
+        });
+      } catch (err) {
+        const msg = toPersianErrorMessage(err);
+        logger.error('App startup: config check failed', { error: msg });
+        if (cancelled) return;
+        setInitError(msg);
+        setHasConfig(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    saveStoredJobs(jobs);
+    if (persistTimerRef.current != null) {
+      window.clearTimeout(persistTimerRef.current);
+    }
+    persistTimerRef.current = window.setTimeout(() => {
+      persistTimerRef.current = null;
+      saveStoredJobs(jobs);
+    }, 300);
+    return () => {
+      if (persistTimerRef.current != null) {
+        window.clearTimeout(persistTimerRef.current);
+        persistTimerRef.current = null;
+      }
+    };
   }, [jobs]);
 
-  const handleJobSubmit = useCallback((newJobs: DownloadJob[]) => {
+  const handleAddPendingJob = useCallback((newJob: DownloadJob) => {
     if (jobsRef.current.some((j) => j.status === 'pending' || j.status === 'running')) {
       return;
     }
-    setJobs((prev) => [...newJobs, ...prev]);
+    setJobs((prev) => [newJob, ...prev]);
     window.dispatchEvent(new CustomEvent('cns-matrix-burst'));
+  }, []);
+
+  const handlePatchJob = useCallback((jobId: string, updates: Partial<DownloadJob>) => {
+    setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, ...updates } : j)));
   }, []);
 
   const handleJobUpdate = useCallback(
@@ -112,17 +139,10 @@ function App() {
         if (job && (job.status === 'failed' || job.status === 'success')) {
           return prev;
         }
-        if (
-          job &&
-          updates.status === 'success' &&
-          job.status !== 'success'
-        ) {
-          setTimeout(() => archive.refresh(), 1000);
-        }
         return prev.map((j) => (j.id === jobId ? { ...j, ...updates } : j));
       });
     },
-    [archive]
+    []
   );
 
   const handleJobRemove = useCallback((jobId: string) => {
@@ -190,7 +210,13 @@ function App() {
           </div>
         )}
 
-        <InputNode onSubmit={handleJobSubmit} disabled={!hasConfig} downloadBusy={downloadBusy} />
+        <InputNode
+          onAddPending={handleAddPendingJob}
+          onPatchJob={handlePatchJob}
+          hasActiveJob={downloadBusy}
+          disabled={!hasConfig}
+          downloadBusy={downloadBusy}
+        />
 
         <SignalFeed
           jobs={jobs}
