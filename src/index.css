@@ -1425,8 +1425,8 @@ body::after {
 }
 
 .fetch-advanced-btn.active {
-  border-color: var(--cns-primary);
-  color: var(--cns-primary);
+  border-color: var(--cns-line-bright);
+  color: var(--cns-text-bright);
 }
 
 .advanced-popover {
@@ -1561,7 +1561,16 @@ body::after {
 
 .advanced-toggle.on .advanced-toggle-knob::after {
   transform: translate(0.95rem, -50%);
-  background: var(--cns-primary);
+  background: var(--cns-text-bright);
+}
+
+.advanced-toggle.on {
+  border-color: rgba(120, 200, 160, 0.5);
+  background: rgba(120, 200, 160, 0.14);
+}
+
+.advanced-toggle.on .advanced-toggle-label {
+  color: var(--cns-text-bright);
 }
 
 .format-pill {
