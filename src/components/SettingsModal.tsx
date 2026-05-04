@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
 import { Save, AlertCircle, Zap, Activity, Settings as SettingsIcon } from 'lucide-react';
 import { fa } from '../lib/i18n';
 import { github } from '../lib/github';
@@ -27,8 +27,34 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
   const [closing, setClosing] = useState(false);
   const [cookiesUploadState, setCookiesUploadState] = useState<'idle' | 'busy' | 'ok'>('idle');
   const cookiesOkTimerRef = useRef<number | null>(null);
+  const settingsTabsTrackRef = useRef<HTMLDivElement | null>(null);
+  const [tabSeg, setTabSeg] = useState({ x: 0, w: 0 });
   const hasSavedConfig = !!github.getConfig();
   useBodyScrollLock(mounted);
+
+  const syncSettingsTabIndicator = useCallback(() => {
+    const track = settingsTabsTrackRef.current;
+    if (!track) return;
+    const btn = track.querySelector<HTMLElement>('button[aria-pressed="true"]');
+    setTabSeg(btn ? { x: btn.offsetLeft, w: btn.offsetWidth } : { x: 0, w: 0 });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!mounted || !isOpen) return;
+    syncSettingsTabIndicator();
+  }, [mounted, isOpen, activeTab, syncSettingsTabIndicator]);
+
+  useEffect(() => {
+    if (!mounted || !isOpen) return;
+    const track = settingsTabsTrackRef.current;
+    const ro = new ResizeObserver(() => syncSettingsTabIndicator());
+    if (track) ro.observe(track);
+    window.addEventListener('resize', syncSettingsTabIndicator);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', syncSettingsTabIndicator);
+    };
+  }, [mounted, isOpen, syncSettingsTabIndicator]);
 
   useEffect(() => {
     let closeTimer: number | null = null;
@@ -204,21 +230,35 @@ export function SettingsModal({ isOpen, onClose, onConfigChanged }: SettingsModa
         <div className="settings-dialog-body">
           <div className="settings-top-row">
             <div className="settings-tabs">
-              <button
-                onClick={() => setActiveTab('settings')}
-                className={cn('settings-tab', activeTab === 'settings' && 'active')}
-                dir="ltr"
-              >
-                <SettingsIcon size={12} />
-                <span>تنظیمات</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('diagnostics')}
-                className={cn('settings-tab', activeTab === 'diagnostics' && 'active')}
-              >
-                <Activity size={12} />
-                <span>عیب‌یابی</span>
-              </button>
+              <div className="settings-tabs-track" ref={settingsTabsTrackRef}>
+                <div
+                  className="segment-slide-indicator settings-tabs-slide"
+                  aria-hidden
+                  style={{
+                    width: tabSeg.w,
+                    transform: `translateX(${tabSeg.x}px)`,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('settings')}
+                  className={cn('settings-tab', activeTab === 'settings' && 'active')}
+                  aria-pressed={activeTab === 'settings'}
+                  dir="ltr"
+                >
+                  <SettingsIcon size={12} />
+                  <span>تنظیمات</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('diagnostics')}
+                  className={cn('settings-tab', activeTab === 'diagnostics' && 'active')}
+                  aria-pressed={activeTab === 'diagnostics'}
+                >
+                  <Activity size={12} />
+                  <span>عیب‌یابی</span>
+                </button>
+              </div>
             </div>
             <span
               className={cn(

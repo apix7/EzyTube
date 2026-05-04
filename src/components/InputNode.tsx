@@ -1,4 +1,12 @@
-import { useMemo, useState, useRef, useEffect, type KeyboardEvent } from 'react';
+import {
+  useMemo,
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  type KeyboardEvent,
+} from 'react';
 import { ClipboardPaste, Download, SlidersHorizontal } from 'lucide-react';
 import {
   DownloadJob,
@@ -10,6 +18,8 @@ import { cn } from '../lib/utils';
 import { toPersianErrorMessage } from '../lib/errors';
 import { logger } from '../lib/logger';
 import { fa } from '../lib/i18n';
+
+type AdvancedPopoverPanel = null | 'open' | 'closing';
 
 interface InputNodeProps {
   onAddPending: (job: DownloadJob) => void;
@@ -117,26 +127,67 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
   const [error, setError] = useState<string | null>(null);
   const inFlightRef = useState(() => new Set<string>())[0];
   const [advanced, setAdvanced] = useState<DownloadAdvancedOptions>(() => loadAdvancedFromStorage());
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [advancedPanel, setAdvancedPanel] = useState<AdvancedPopoverPanel>(null);
   const advancedWrapRef = useRef<HTMLDivElement | null>(null);
+  const formatTrackRef = useRef<HTMLDivElement | null>(null);
+  const qualityTrackRef = useRef<HTMLDivElement | null>(null);
+  const [formatSeg, setFormatSeg] = useState({ x: 0, w: 0 });
+  const [qualitySeg, setQualitySeg] = useState({ x: 0, w: 0 });
 
   const url = useMemo(() => parseSingleUrl(text), [text]);
   const isMp3 = format === 'mp3';
+
+  const syncSlideIndicators = useCallback(() => {
+    const ft = formatTrackRef.current;
+    if (ft) {
+      const b = ft.querySelector<HTMLElement>('button[aria-pressed="true"]');
+      setFormatSeg(b ? { x: b.offsetLeft, w: b.offsetWidth } : { x: 0, w: 0 });
+    }
+    const qt = qualityTrackRef.current;
+    if (qt) {
+      const b = qt.querySelector<HTMLElement>('button[aria-pressed="true"]');
+      setQualitySeg(b ? { x: b.offsetLeft, w: b.offsetWidth } : { x: 0, w: 0 });
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    syncSlideIndicators();
+  }, [quality, format, isMp3, syncSlideIndicators]);
+
+  useEffect(() => {
+    const ft = formatTrackRef.current;
+    const qt = qualityTrackRef.current;
+    const ro = new ResizeObserver(() => syncSlideIndicators());
+    if (ft) ro.observe(ft);
+    if (qt) ro.observe(qt);
+    window.addEventListener('resize', syncSlideIndicators);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', syncSlideIndicators);
+    };
+  }, [syncSlideIndicators]);
 
   useEffect(() => {
     saveAdvancedToStorage(advanced);
   }, [advanced]);
 
   useEffect(() => {
-    if (!advancedOpen) return;
+    if (advancedPanel !== 'open') return;
     const onDown = (e: MouseEvent) => {
       const el = advancedWrapRef.current;
       if (!el || !(e.target instanceof Node) || el.contains(e.target)) return;
-      setAdvancedOpen(false);
+      setAdvancedPanel('closing');
     };
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
-  }, [advancedOpen]);
+  }, [advancedPanel]);
+
+  useEffect(() => {
+    if (advancedPanel !== 'closing') return;
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const id = window.setTimeout(() => setAdvancedPanel(null), 32);
+    return () => window.clearTimeout(id);
+  }, [advancedPanel]);
 
   const dispatchAdvanced = useMemo((): DownloadAdvancedOptions => {
     if (isMp3) {
@@ -313,39 +364,70 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
 
       <div className="fetch-bar">
         <div className="format-pill" role="tablist" aria-label="format">
-          {FORMATS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setFormat(opt.value)}
-              disabled={formLocked}
-              className={cn('format-pill-btn', format === opt.value && 'active')}
-              aria-pressed={format === opt.value}
-            >
-              {opt.label}
-            </button>
-          ))}
+          <div className="format-pill-track" ref={formatTrackRef}>
+            <div
+              className="segment-slide-indicator format-pill-slide"
+              aria-hidden
+              style={{
+                width: formatSeg.w,
+                transform: `translateX(${formatSeg.x}px)`,
+              }}
+            />
+            {FORMATS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setFormat(opt.value)}
+                disabled={formLocked}
+                className={cn('format-pill-btn', format === opt.value && 'active')}
+                aria-pressed={format === opt.value}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="advanced-control-wrap" ref={advancedWrapRef}>
           <button
             type="button"
-            className={cn('fetch-advanced-btn', advancedOpen && 'active')}
-            onClick={() => setAdvancedOpen((o) => !o)}
+            className={cn('fetch-advanced-btn', advancedPanel === 'open' && 'active')}
+            onClick={() =>
+              setAdvancedPanel((p) => {
+                if (p === 'open') return 'closing';
+                if (p === 'closing') return p;
+                return 'open';
+              })
+            }
             disabled={formLocked}
-            aria-expanded={advancedOpen}
+            aria-expanded={advancedPanel === 'open'}
             aria-label={fa.input.advancedBtn}
             title={fa.input.advancedBtn}
           >
             <SlidersHorizontal size={18} strokeWidth={2} />
           </button>
-          {advancedOpen && (
-            <div className="advanced-popover" dir="rtl" role="dialog" aria-label={fa.input.advancedTitle}>
+          {advancedPanel != null && (
+            <div
+              className={cn(
+                'advanced-popover',
+                advancedPanel === 'closing' && 'advanced-popover--closing'
+              )}
+              dir="rtl"
+              role="dialog"
+              aria-label={fa.input.advancedTitle}
+              onAnimationEnd={(e) => {
+                if (e.target !== e.currentTarget) return;
+                const n = e.animationName;
+                if (!n.includes('cns-advanced-popover-out')) return;
+                setAdvancedPanel((p) => (p === 'closing' ? null : p));
+              }}
+            >
               <div className="advanced-popover-title">{fa.input.advancedTitle}</div>
               <div className="advanced-popover-row">
                 <label htmlFor="cns-adv-container">{fa.input.advancedContainer}</label>
                 <select
                   id="cns-adv-container"
+                  className="advanced-select"
                   value={dispatchAdvanced.container}
                   onChange={(e) =>
                     setAdvanced((a) => ({
@@ -365,6 +447,7 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
                 <label htmlFor="cns-adv-codec">{fa.input.advancedCodec}</label>
                 <select
                   id="cns-adv-codec"
+                  className="advanced-select"
                   value={dispatchAdvanced.codec}
                   onChange={(e) =>
                     setAdvanced((a) => ({
@@ -385,6 +468,7 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
                 <label htmlFor="cns-adv-bitrate">{fa.input.advancedBitrate}</label>
                 <select
                   id="cns-adv-bitrate"
+                  className="advanced-select"
                   value={dispatchAdvanced.bitrate}
                   onChange={(e) =>
                     setAdvanced((a) => ({
@@ -447,21 +531,32 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
           aria-label="quality"
         >
           <span className="quality-label">کیفیت</span>
-          {QUALITIES.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => setQuality(opt.value)}
-              disabled={formLocked || isMp3}
-              className={cn(
-                'quality-rail-btn',
-                quality === opt.value && !isMp3 && 'active'
-              )}
-              aria-pressed={quality === opt.value}
-            >
-              {opt.label}
-            </button>
-          ))}
+          <div className="quality-rail-buttons" ref={qualityTrackRef}>
+            <div
+              className="segment-slide-indicator quality-rail-slide"
+              aria-hidden
+              style={{
+                opacity: isMp3 ? 0 : 1,
+                width: qualitySeg.w,
+                transform: `translateX(${qualitySeg.x}px)`,
+              }}
+            />
+            {QUALITIES.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setQuality(opt.value)}
+                disabled={formLocked || isMp3}
+                className={cn(
+                  'quality-rail-btn',
+                  quality === opt.value && !isMp3 && 'active'
+                )}
+                aria-pressed={quality === opt.value}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
