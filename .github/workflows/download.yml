@@ -254,8 +254,8 @@ jobs:
         [ "$EMBED_METADATA" = "true" ] && EM1="--embed-metadata" || true
         [ "$EMBED_THUMBNAIL" = "true" ] && EM2="--embed-thumbnail" || true
 
-        VIDEO_FMTSEL="$QUALITY_OPT"
-        VIDEO_EX="--embed-subs --sub-langs all"
+        VIDEO_FMTSEL="(${QUALITY_OPT})+mergeall[vcodec=none]"
+        VIDEO_EX="--embed-subs --sub-langs all --audio-multistreams"
 
         if [ "$FORMAT" = "mp3" ] || [ "$QUALITY" = "audio" ]; then
           OUTPUT_TEMPLATE="downloads/%(title)s.%(ext)s"
@@ -328,7 +328,7 @@ jobs:
                   8M) VEXTRA="-b:v 8M -maxrate 8M -bufsize 16M" ;;
                   *) VEXTRA="-preset fast -crf 23" ;;
                 esac
-                ffmpeg -y -hide_banner -loglevel error -i "$TARGET" -map 0:v:0 -map 0:a? -map 0:s? -map 0:v:1? -map_metadata 0 -c:v:0 libx264 $VEXTRA -c:v:1 copy -c:a copy -c:s copy -disposition:v:1 attached_pic "$TMP"
+                ffmpeg -y -hide_banner -loglevel error -i "$TARGET" -map 0:v:0 -map 0:a -map 0:s? -map 0:v:1? -map_metadata 0 -c:v:0 libx264 $VEXTRA -c:v:1 copy -c:a copy -c:s copy -disposition:v:1 attached_pic "$TMP"
               elif [ "$CODEC" = "vp9" ]; then
                 case "$BITRATE" in
                   1M) VEXTRA="-b:v 1M" ;;
@@ -337,7 +337,7 @@ jobs:
                   8M) VEXTRA="-b:v 8M" ;;
                   *) VEXTRA="-b:v 0 -crf 32" ;;
                 esac
-                ffmpeg -y -hide_banner -loglevel error -i "$TARGET" -map 0:v:0 -map 0:a? -map 0:s? -map 0:v:1? -map_metadata 0 -c:v:0 libvpx-vp9 $VEXTRA -c:v:1 copy -c:a copy -c:s copy -disposition:v:1 attached_pic "$TMP"
+                ffmpeg -y -hide_banner -loglevel error -i "$TARGET" -map 0:v:0 -map 0:a -map 0:s? -map 0:v:1? -map_metadata 0 -c:v:0 libvpx-vp9 $VEXTRA -c:v:1 copy -c:a copy -c:s copy -disposition:v:1 attached_pic "$TMP"
               elif [ "$CODEC" = "hevc" ]; then
                 case "$BITRATE" in
                   1M) VEXTRA="-b:v 1M -maxrate 1M -bufsize 2M -tag:v:0 hvc1" ;;
@@ -346,7 +346,7 @@ jobs:
                   8M) VEXTRA="-b:v 8M -maxrate 8M -bufsize 16M -tag:v:0 hvc1" ;;
                   *) VEXTRA="-preset medium -crf 28 -tag:v:0 hvc1" ;;
                 esac
-                ffmpeg -y -hide_banner -loglevel error -i "$TARGET" -map 0:v:0 -map 0:a? -map 0:s? -map 0:v:1? -map_metadata 0 -c:v:0 libx265 $VEXTRA -c:v:1 copy -c:a copy -c:s copy -disposition:v:1 attached_pic "$TMP"
+                ffmpeg -y -hide_banner -loglevel error -i "$TARGET" -map 0:v:0 -map 0:a -map 0:s? -map 0:v:1? -map_metadata 0 -c:v:0 libx265 $VEXTRA -c:v:1 copy -c:a copy -c:s copy -disposition:v:1 attached_pic "$TMP"
               elif [ "$CODEC" = "av1" ]; then
                 case "$BITRATE" in
                   1M) VEXTRA="-b:v 1M" ;;
@@ -355,7 +355,7 @@ jobs:
                   8M) VEXTRA="-b:v 8M" ;;
                   *) VEXTRA="-preset 8 -crf 35" ;;
                 esac
-                ffmpeg -y -hide_banner -loglevel error -i "$TARGET" -map 0:v:0 -map 0:a? -map 0:s? -map 0:v:1? -map_metadata 0 -c:v:0 libsvtav1 $VEXTRA -c:v:1 copy -c:a copy -c:s copy -disposition:v:1 attached_pic "$TMP"
+                ffmpeg -y -hide_banner -loglevel error -i "$TARGET" -map 0:v:0 -map 0:a -map 0:s? -map 0:v:1? -map_metadata 0 -c:v:0 libsvtav1 $VEXTRA -c:v:1 copy -c:a copy -c:s copy -disposition:v:1 attached_pic "$TMP"
               fi
               if [ -f "$TMP" ]; then
                 mv -f "$TMP" "$TARGET"
