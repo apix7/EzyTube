@@ -120,6 +120,36 @@ export const ErrorCodes = {
   CONFIG_MISSING: 'CONFIG_MISSING',
 } as const;
 
+export type DownloadAdvancedContainer = 'default' | 'mp4' | 'webm' | 'mkv';
+export type DownloadAdvancedCodec = 'copy' | 'h264' | 'vp9';
+export type DownloadAdvancedBitrate = 'auto' | '1M' | '3M' | '5M' | '8M';
+
+export interface DownloadAdvancedOptions {
+  container: DownloadAdvancedContainer;
+  codec: DownloadAdvancedCodec;
+  bitrate: DownloadAdvancedBitrate;
+  embedMetadata: boolean;
+  embedThumbnail: boolean;
+}
+
+export const DEFAULT_DOWNLOAD_ADVANCED: DownloadAdvancedOptions = {
+  container: 'default',
+  codec: 'copy',
+  bitrate: 'auto',
+  embedMetadata: true,
+  embedThumbnail: true,
+};
+
+export function workflowDispatchAdvancedPayload(adv: DownloadAdvancedOptions) {
+  return {
+    container: adv.container,
+    codec: adv.codec,
+    bitrate: adv.bitrate,
+    embed_metadata: adv.embedMetadata ? 'true' : 'false',
+    embed_thumbnail: adv.embedThumbnail ? 'true' : 'false',
+  };
+}
+
 // Workflow YAML content embedded for auto-setup
 const WORKFLOW_YML = `name: CNS Download Video
 
@@ -150,6 +180,52 @@ on:
           - mp4
           - webm
           - mp3
+      container:
+        description: 'Video merge container override'
+        required: true
+        default: 'default'
+        type: choice
+        options:
+          - default
+          - mp4
+          - webm
+          - mkv
+      codec:
+        description: 'Video re-encode after download'
+        required: true
+        default: 'copy'
+        type: choice
+        options:
+          - copy
+          - h264
+          - vp9
+      bitrate:
+        description: 'Video bitrate when re-encoding'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - 1M
+          - 3M
+          - 5M
+          - 8M
+      embed_metadata:
+        description: 'Pass --embed-metadata to yt-dlp when true'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      embed_thumbnail:
+        description: 'Pass --embed-thumbnail to yt-dlp when true'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 concurrency:
   group: cns-download-queue
@@ -251,6 +327,11 @@ jobs:
           URL: \${{ github.event.inputs.url }}
           QUALITY: \${{ github.event.inputs.quality }}
           FORMAT: \${{ github.event.inputs.format }}
+          CONTAINER: \${{ github.event.inputs.container }}
+          CODEC: \${{ github.event.inputs.codec }}
+          BITRATE: \${{ github.event.inputs.bitrate }}
+          EMBED_METADATA: \${{ github.event.inputs.embed_metadata }}
+          EMBED_THUMBNAIL: \${{ github.event.inputs.embed_thumbnail }}
         run: |
           echo "Starting download..."
           echo "URL: $URL"
@@ -297,14 +378,24 @@ jobs:
               ;;
           esac
           
-          # Cookies are mandatory - fail if missing
           if [ ! -f "cookies.txt" ]; then
             echo "ERROR: cookies.txt required but not found"
             exit 1
           fi
           
+          EM1=""
+          EM2=""
+          [ "$EMBED_METADATA" = "true" ] && EM1="--embed-metadata" || true
+          [ "$EMBED_THUMBNAIL" = "true" ] && EM2="--embed-thumbnail" || true
+          
+          MERGE_FORMAT="$FORMAT"
+          if [ "$CONTAINER" != "default" ] && [ -n "$CONTAINER" ]; then
+            case "$CONTAINER" in
+              mp4|webm|mkv) MERGE_FORMAT="$CONTAINER" ;;
+            esac
+          fi
+          
           if [ "$FORMAT" = "mp3" ] || [ "$QUALITY" = "audio" ]; then
-            # Audio-only download
             OUTPUT_TEMPLATE="downloads/%(title)s.%(ext)s"
             yt-dlp \\
               --format "$QUALITY_OPT" \\
@@ -317,7 +408,8 @@ jobs:
               --write-info-json \\
               --write-thumbnail \\
               --convert-thumbnails jpg \\
-              --embed-thumbnail \\
+              $EM1 \\
+              $EM2 \\
               --cookies cookies.txt \\
               --js-runtimes node \\
               "$URL"
@@ -325,7 +417,7 @@ jobs:
             OUTPUT_TEMPLATE="downloads/%(title)s.%(ext)s"
             yt-dlp \\
               --format "$QUALITY_OPT" \\
-              --merge-output-format "$FORMAT" \\
+              --merge-output-format "$MERGE_FORMAT" \\
               --postprocessor-args "Merger+ffmpeg:-max_muxing_queue_size 99999" \\
               --output "$OUTPUT_TEMPLATE" \\
               --windows-filenames \\
@@ -333,6 +425,8 @@ jobs:
               --write-info-json \\
               --write-thumbnail \\
               --convert-thumbnails jpg \\
+              $EM1 \\
+              $EM2 \\
               --cookies cookies.txt \\
               --js-runtimes node \\
               --retries 3 \\
@@ -340,7 +434,7 @@ jobs:
               "$URL" || \\
             yt-dlp \\
               --format "worstvideo+worstaudio/worst" \\
-              --merge-output-format "$FORMAT" \\
+              --merge-output-format "$MERGE_FORMAT" \\
               --postprocessor-args "Merger+ffmpeg:-max_muxing_queue_size 99999" \\
               --output "$OUTPUT_TEMPLATE" \\
               --windows-filenames \\
@@ -348,14 +442,45 @@ jobs:
               --write-info-json \\
               --write-thumbnail \\
               --convert-thumbnails jpg \\
+              $EM1 \\
+              $EM2 \\
               --cookies cookies.txt \\
               --js-runtimes node \\
               "$URL"
+            if [ "$CODEC" != "copy" ]; then
+              TARGET=$(ls -t downloads/*.mp4 downloads/*.webm downloads/*.mkv 2>/dev/null | head -1 || true)
+              if [ -n "$TARGET" ]; then
+                TMP="\${TARGET}.cnsreenc"
+                rm -f "$TMP"
+                VEXTRA=""
+                if [ "$CODEC" = "h264" ]; then
+                  case "$BITRATE" in
+                    1M) VEXTRA="-b:v 1M -maxrate 1M -bufsize 2M" ;;
+                    3M) VEXTRA="-b:v 3M -maxrate 3M -bufsize 6M" ;;
+                    5M) VEXTRA="-b:v 5M -maxrate 5M -bufsize 10M" ;;
+                    8M) VEXTRA="-b:v 8M -maxrate 8M -bufsize 16M" ;;
+                    *) VEXTRA="-preset fast -crf 23" ;;
+                  esac
+                  ffmpeg -y -hide_banner -loglevel error -i "$TARGET" -c:v libx264 $VEXTRA -c:a copy "$TMP"
+                elif [ "$CODEC" = "vp9" ]; then
+                  case "$BITRATE" in
+                    1M) VEXTRA="-b:v 1M" ;;
+                    3M) VEXTRA="-b:v 3M" ;;
+                    5M) VEXTRA="-b:v 5M" ;;
+                    8M) VEXTRA="-b:v 8M" ;;
+                    *) VEXTRA="-b:v 0 -crf 32" ;;
+                  esac
+                  ffmpeg -y -hide_banner -loglevel error -i "$TARGET" -c:v libvpx-vp9 $VEXTRA -c:a copy "$TMP"
+                fi
+                if [ -f "$TMP" ]; then
+                  mv -f "$TMP" "$TARGET"
+                fi
+              fi
+            fi
           fi
           
           echo "Download complete"
           
-          # Get the downloaded file name
           DOWNLOADED_FILE=$(ls -t downloads/*.mp4 downloads/*.webm downloads/*.mkv downloads/*.mp3 2>/dev/null | head -1 || echo "")
           if [ -n "$DOWNLOADED_FILE" ]; then
             echo "file=$DOWNLOADED_FILE" >> $GITHUB_OUTPUT
@@ -543,6 +668,7 @@ export interface DownloadJob {
   url: string;
   quality: string;
   format: string;
+  advanced?: DownloadAdvancedOptions;
   status: 'pending' | 'running' | 'success' | 'failed';
   progress: number;
   logs: string[];
@@ -992,7 +1118,12 @@ class GitHubClient {
     return p;
   }
 
-  async triggerWorkflow(url: string, quality: string, format: string): Promise<number> {
+  async triggerWorkflow(
+    url: string,
+    quality: string,
+    format: string,
+    advanced: DownloadAdvancedOptions = DEFAULT_DOWNLOAD_ADVANCED
+  ): Promise<number> {
     const config = this.getConfig();
     if (!config) throw new CNSError('GitHub config not set', ErrorCodes.CONFIG_MISSING, false);
 
@@ -1015,6 +1146,7 @@ class GitHubClient {
       targetHost,
       quality,
       format,
+      advanced,
     });
 
     const url_path = `${API_BASE}/repos/${config.owner}/${config.repo}/actions/workflows/download.yml/dispatches`;
@@ -1034,6 +1166,7 @@ class GitHubClient {
             url,
             quality,
             format,
+            ...workflowDispatchAdvancedPayload(advanced),
           },
         }),
       });
@@ -1095,9 +1228,10 @@ class GitHubClient {
     url: string,
     quality: string,
     format: string,
+    advanced: DownloadAdvancedOptions,
     timeoutMs: number
   ): Promise<number> {
-    const run = this.triggerWorkflow(url, quality, format);
+    const run = this.triggerWorkflow(url, quality, format, advanced);
     let timer = 0;
     const timeout = new Promise<number>((_, reject) => {
       timer = window.setTimeout(() => reject(new Error('Dispatch timeout')), timeoutMs);
@@ -1112,12 +1246,13 @@ class GitHubClient {
   async triggerWorkflowFast(
     url: string,
     quality: string,
-    format: string
+    format: string,
+    advanced: DownloadAdvancedOptions = DEFAULT_DOWNLOAD_ADVANCED
   ): Promise<{ status: number; dispatchAt: string; runHint: { afterTs: number; quality: string; format: string } }> {
     let lastErr: unknown = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
-        const status = await this.triggerWorkflowWithTimeout(url, quality, format, 12000);
+        const status = await this.triggerWorkflowWithTimeout(url, quality, format, advanced, 12000);
         const now = Date.now();
         return {
           status,

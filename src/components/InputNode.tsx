@@ -1,6 +1,11 @@
-import { useMemo, useState, type KeyboardEvent } from 'react';
-import { ClipboardPaste, Download } from 'lucide-react';
-import { DownloadJob, github } from '../lib/github';
+import { useMemo, useState, useRef, useEffect, type KeyboardEvent } from 'react';
+import { ClipboardPaste, Download, SlidersHorizontal } from 'lucide-react';
+import {
+  DownloadJob,
+  github,
+  DEFAULT_DOWNLOAD_ADVANCED,
+  type DownloadAdvancedOptions,
+} from '../lib/github';
 import { cn } from '../lib/utils';
 import { toPersianErrorMessage } from '../lib/errors';
 import { logger } from '../lib/logger';
@@ -26,6 +31,7 @@ const QUALITIES = [
   { value: '480p', label: '480P' },
 ] as const;
 const COOKIE_HASH_KEY = 'cns_cookie_hash_v1';
+const ADVANCED_STORAGE_KEY = 'cns_advanced_download_v1';
 
 function parseSingleUrl(raw: string): string | null {
   const t = raw.trim();
@@ -62,6 +68,46 @@ async function sha1Hex(input: string): Promise<string> {
     .join('');
 }
 
+function normalizeAdvanced(raw: unknown): DownloadAdvancedOptions {
+  const d = DEFAULT_DOWNLOAD_ADVANCED;
+  if (!raw || typeof raw !== 'object') return { ...d };
+  const o = raw as Record<string, unknown>;
+  const c = o.container;
+  const cd = o.codec;
+  const br = o.bitrate;
+  const container =
+    c === 'default' || c === 'mp4' || c === 'webm' || c === 'mkv' ? c : d.container;
+  const codec = cd === 'copy' || cd === 'h264' || cd === 'vp9' ? cd : d.codec;
+  const bitrate =
+    br === 'auto' || br === '1M' || br === '3M' || br === '5M' || br === '8M' ? br : d.bitrate;
+  const embedMetadata =
+    typeof o.embedMetadata === 'boolean' ? o.embedMetadata : d.embedMetadata;
+  const embedThumbnail =
+    typeof o.embedThumbnail === 'boolean' ? o.embedThumbnail : d.embedThumbnail;
+  return { container, codec, bitrate, embedMetadata, embedThumbnail };
+}
+
+function loadAdvancedFromStorage(): DownloadAdvancedOptions {
+  try {
+    const raw = localStorage.getItem(ADVANCED_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_DOWNLOAD_ADVANCED };
+    return normalizeAdvanced(JSON.parse(raw));
+  } catch {
+    return { ...DEFAULT_DOWNLOAD_ADVANCED };
+  }
+}
+
+function saveAdvancedToStorage(a: DownloadAdvancedOptions) {
+  try {
+    localStorage.setItem(ADVANCED_STORAGE_KEY, JSON.stringify(a));
+  } catch {
+  }
+}
+
+function advancedSubmitKey(a: DownloadAdvancedOptions): string {
+  return `${a.container}|${a.codec}|${a.bitrate}|${a.embedMetadata ? 1 : 0}|${a.embedThumbnail ? 1 : 0}`;
+}
+
 export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, downloadBusy }: InputNodeProps) {
   const [text, setText] = useState('');
   const [quality, setQuality] = useState<string>('best');
@@ -69,9 +115,39 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inFlightRef = useState(() => new Set<string>())[0];
+  const [advanced, setAdvanced] = useState<DownloadAdvancedOptions>(() => loadAdvancedFromStorage());
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const advancedWrapRef = useRef<HTMLDivElement | null>(null);
 
   const url = useMemo(() => parseSingleUrl(text), [text]);
   const isMp3 = format === 'mp3';
+
+  useEffect(() => {
+    saveAdvancedToStorage(advanced);
+  }, [advanced]);
+
+  useEffect(() => {
+    if (!advancedOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const el = advancedWrapRef.current;
+      if (!el || !(e.target instanceof Node) || el.contains(e.target)) return;
+      setAdvancedOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [advancedOpen]);
+
+  const dispatchAdvanced = useMemo((): DownloadAdvancedOptions => {
+    if (isMp3) {
+      return {
+        ...advanced,
+        container: 'default',
+        codec: 'copy',
+        bitrate: 'auto',
+      };
+    }
+    return advanced;
+  }, [advanced, isMp3]);
 
   const handleSubmit = async () => {
     if (downloadBusy || hasActiveJob) return;
@@ -88,7 +164,8 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
 
     const effectiveQuality = isMp3 ? 'audio' : quality;
     const effectiveFormat = isMp3 ? 'mp3' : 'mp4';
-    const submitKey = `${url}|${effectiveQuality}|${effectiveFormat}`;
+    const adv = dispatchAdvanced;
+    const submitKey = `${url}|${effectiveQuality}|${effectiveFormat}|${advancedSubmitKey(adv)}`;
     if (inFlightRef.has(submitKey)) return;
     setIsLoading(true);
     setError(null);
@@ -97,6 +174,7 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
       logger.info('[Download] Submit started', {
         format,
         quality,
+        advanced: adv,
       });
       const cookieHealth = github.assessStoredCookies();
       if (!cookieHealth.ok) {
@@ -120,6 +198,7 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
         url,
         quality: effectiveQuality,
         format: effectiveFormat,
+        advanced: { ...adv },
         status: 'pending',
         progress: 0,
         logs: [`[${new Date().toLocaleTimeString('fa-IR')}] صف شد`],
@@ -130,7 +209,7 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
       const metaTask = fetchOembed(url);
 
       try {
-        const dispatch = await github.triggerWorkflowFast(url, effectiveQuality, effectiveFormat);
+        const dispatch = await github.triggerWorkflowFast(url, effectiveQuality, effectiveFormat, adv);
         const fetchedMeta = await metaTask;
         const logs = [`[${new Date().toLocaleTimeString('fa-IR')}] صف شد`, `[${new Date().toLocaleTimeString('fa-IR')}] ارسال به گیت‌هاب انجام شد`];
         onPatchJob(jobId, {
@@ -142,6 +221,7 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
         logger.info('[Download] Workflow dispatched', {
           format: effectiveFormat,
           quality: effectiveQuality,
+          advanced: adv,
         });
         setText('');
         logger.info('[Download] Submit finished', {
@@ -194,6 +274,8 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
     }
   };
 
+  const videoAdvancedLocked = formLocked || isMp3;
+
   return (
     <div className="fetch-shell">
       <div className="fetch-textarea-wrap">
@@ -242,6 +324,108 @@ export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, do
               {opt.label}
             </button>
           ))}
+        </div>
+
+        <div className="advanced-control-wrap" ref={advancedWrapRef}>
+          <button
+            type="button"
+            className={cn('fetch-advanced-btn', advancedOpen && 'active')}
+            onClick={() => setAdvancedOpen((o) => !o)}
+            disabled={formLocked}
+            aria-expanded={advancedOpen}
+            aria-label={fa.input.advancedBtn}
+            title={fa.input.advancedBtn}
+          >
+            <SlidersHorizontal size={18} strokeWidth={2} />
+          </button>
+          {advancedOpen && (
+            <div className="advanced-popover" dir="rtl" role="dialog" aria-label={fa.input.advancedTitle}>
+              <div className="advanced-popover-title">{fa.input.advancedTitle}</div>
+              <div className="advanced-popover-row">
+                <label htmlFor="cns-adv-container">{fa.input.advancedContainer}</label>
+                <select
+                  id="cns-adv-container"
+                  value={advanced.container}
+                  onChange={(e) =>
+                    setAdvanced((a) => ({
+                      ...a,
+                      container: e.target.value as DownloadAdvancedOptions['container'],
+                    }))
+                  }
+                  disabled={videoAdvancedLocked}
+                >
+                  <option value="default">{fa.input.advancedOptDefault}</option>
+                  <option value="mp4">{fa.input.advancedOptMp4}</option>
+                  <option value="webm">{fa.input.advancedOptWebm}</option>
+                  <option value="mkv">{fa.input.advancedOptMkv}</option>
+                </select>
+              </div>
+              <div className="advanced-popover-row">
+                <label htmlFor="cns-adv-codec">{fa.input.advancedCodec}</label>
+                <select
+                  id="cns-adv-codec"
+                  value={advanced.codec}
+                  onChange={(e) =>
+                    setAdvanced((a) => ({
+                      ...a,
+                      codec: e.target.value as DownloadAdvancedOptions['codec'],
+                    }))
+                  }
+                  disabled={videoAdvancedLocked}
+                >
+                  <option value="copy">{fa.input.advancedOptCopy}</option>
+                  <option value="h264">{fa.input.advancedOptH264}</option>
+                  <option value="vp9">{fa.input.advancedOptVp9}</option>
+                </select>
+              </div>
+              <div className="advanced-popover-row">
+                <label htmlFor="cns-adv-bitrate">{fa.input.advancedBitrate}</label>
+                <select
+                  id="cns-adv-bitrate"
+                  value={advanced.bitrate}
+                  onChange={(e) =>
+                    setAdvanced((a) => ({
+                      ...a,
+                      bitrate: e.target.value as DownloadAdvancedOptions['bitrate'],
+                    }))
+                  }
+                  disabled={videoAdvancedLocked || advanced.codec === 'copy'}
+                >
+                  <option value="auto">{fa.input.advancedOptAutoBr}</option>
+                  <option value="1M">1M</option>
+                  <option value="3M">3M</option>
+                  <option value="5M">5M</option>
+                  <option value="8M">8M</option>
+                </select>
+              </div>
+              <div className="advanced-popover-row">
+                <button
+                  type="button"
+                  className={cn('advanced-toggle', advanced.embedMetadata && 'on')}
+                  onClick={() =>
+                    setAdvanced((a) => ({ ...a, embedMetadata: !a.embedMetadata }))
+                  }
+                  disabled={formLocked}
+                >
+                  <span>{fa.input.advancedEmbedMeta}</span>
+                  <span className="advanced-toggle-knob" aria-hidden />
+                </button>
+              </div>
+              <div className="advanced-popover-row">
+                <button
+                  type="button"
+                  className={cn('advanced-toggle', advanced.embedThumbnail && 'on')}
+                  onClick={() =>
+                    setAdvanced((a) => ({ ...a, embedThumbnail: !a.embedThumbnail }))
+                  }
+                  disabled={formLocked}
+                >
+                  <span>{fa.input.advancedEmbedThumb}</span>
+                  <span className="advanced-toggle-knob" aria-hidden />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <button

@@ -50,6 +50,7 @@ function summarizeJobsForSupport(jobs: DownloadJob[]) {
     status: j.status,
     format: j.format,
     quality: j.quality,
+    advanced: j.advanced ?? null,
     url: j.url,
     githubRunId: j.githubRunId ?? null,
     githubLiveStep: j.githubLiveStep ?? null,
