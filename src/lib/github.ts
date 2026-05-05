@@ -24,6 +24,10 @@ function utf8ToBase64GitHub(s: string): string {
   return btoa(binary);
 }
 
+export function encodeRepoContentsPath(path: string): string {
+  return encodeURIComponent(path).replace(/%2F/g, '/');
+}
+
 function logGithubApiHttpError(
   message: string,
   detail: {
@@ -151,10 +155,13 @@ export const DEFAULT_DOWNLOAD_ADVANCED: DownloadAdvancedOptions = {
 };
 
 export function workflowDispatchAdvancedPayload(adv: DownloadAdvancedOptions) {
+  const userTz =
+    typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
   return {
     container: adv.container,
     codec: adv.codec,
     bitrate: adv.bitrate,
+    timezone: typeof userTz === 'string' && userTz.length > 0 ? userTz : 'UTC',
   };
 }
 
@@ -743,6 +750,7 @@ class GitHubClient {
   private inFlightGet = new Map<string, Promise<any>>();
   private hotEndpointCache = new Map<string, { ts: number; data: any }>();
   private hotEndpointRefresh = new Map<string, Promise<any>>();
+  private defaultBranchCache: { key: string; branch: string; ts: number } | null = null;
   private workflowEnsureTs = 0;
   private archiveContentCache = new Map<string, { ts: number; value: { content: string; sha: string } | null }>();
   private archiveContentInFlight = new Map<string, Promise<{ content: string; sha: string } | null>>();
@@ -918,6 +926,7 @@ class GitHubClient {
   clearConfig() {
     this.config = null;
     this.workflowEnsured = false;
+    this.defaultBranchCache = null;
     storage.remove('cns_github_config');
     try {
       sessionStorage.removeItem(SESSION_TOKEN_KEY);
@@ -1436,32 +1445,132 @@ class GitHubClient {
     }
   }
 
-  async getDownloads(): Promise<any[]> {
+  private invalidateDownloadsArtifacts(owner: string, repo: string, prefix?: string) {
+    const endpointKey = `downloads:${owner}/${repo}`;
+    this.hotEndpointCache.delete(endpointKey);
+    const pfx = `${owner}/${repo}:`;
+    const purgePath = (pathOnly: string) =>
+      prefix
+        ? pathOnly === prefix || pathOnly.startsWith(`${prefix}/`)
+        : true;
+    for (const k of [...this.archiveContentCache.keys()]) {
+      if (!k.startsWith(pfx)) continue;
+      const pathOnly = k.slice(pfx.length);
+      if (purgePath(pathOnly)) this.archiveContentCache.delete(k);
+    }
+    for (const k of [...this.commitTimeCache.keys()]) {
+      if (!k.startsWith(pfx)) continue;
+      const pathOnly = k.slice(pfx.length);
+      if (purgePath(pathOnly)) this.commitTimeCache.delete(k);
+    }
+  }
+
+  invalidateDownloadsCache(prefix?: string) {
+    const config = this.getConfig();
+    if (!config) return;
+    this.invalidateDownloadsArtifacts(config.owner, config.repo, prefix);
+  }
+
+  private async listDownloadsContentsMerged(owner: string, repo: string, tokenScope: string): Promise<any[]> {
+    const topPath = `/repos/${owner}/${repo}/contents/downloads`;
+    let top: any[] = [];
+    try {
+      const data = await this.requestCoalesced(topPath, tokenScope);
+      top = Array.isArray(data) ? data : [];
+    } catch {
+      return [];
+    }
+    const out: any[] = [];
+    for (const e of top) {
+      if (e?.type === 'file') out.push(e);
+    }
+    const dirEntries = top.filter((e) => e?.type === 'dir' && e.name !== '.tmp');
+    const subLists = await Promise.all(
+      dirEntries.map(async (e) => {
+        const subPath = `/repos/${owner}/${repo}/contents/downloads/${encodeURIComponent(e.name)}`;
+        try {
+          const d = await this.requestCoalesced(subPath, tokenScope);
+          return Array.isArray(d) ? d : [];
+        } catch {
+          return [];
+        }
+      })
+    );
+    for (const arr of subLists) {
+      for (const f of arr) {
+        if (f?.type === 'file') out.push(f);
+      }
+    }
+    return out;
+  }
+
+  private async loadDownloadsMerged(endpointKey: string, tokenScope: string): Promise<any[]> {
+    const config = this.getConfig();
+    if (!config) return [];
+    const merged = await this.listDownloadsContentsMerged(config.owner, config.repo, tokenScope);
+    this.setHotCache(endpointKey, merged);
+    return merged;
+  }
+
+  async getDefaultBranch(): Promise<string> {
+    const config = this.getConfig();
+    if (!config) throw new Error('GitHub config not set');
+    const key = `${config.owner}/${config.repo}`;
+    const hit = this.defaultBranchCache;
+    if (hit && hit.key === key && Date.now() - hit.ts < 120_000) {
+      return hit.branch;
+    }
+    const repo = await this.request(`/repos/${config.owner}/${config.repo}`);
+    const b =
+      typeof repo?.default_branch === 'string' && repo.default_branch.length > 0 ? repo.default_branch : 'main';
+    this.defaultBranchCache = { key, branch: b, ts: Date.now() };
+    return b;
+  }
+
+  private async listDirectoryEntriesRecursive(
+    owner: string,
+    repo: string,
+    relPath: string,
+    branch: string
+  ): Promise<Array<{ path: string; type: string; sha?: string }>> {
+    const enc = encodeRepoContentsPath(relPath);
+    const data = await this.request(
+      `/repos/${owner}/${repo}/contents/${enc}?ref=${encodeURIComponent(branch)}`
+    );
+    if (!Array.isArray(data)) return [];
+    const out: Array<{ path: string; type: string; sha?: string }> = [];
+    for (const e of data) {
+      if (e.type === 'file') {
+        out.push({ path: e.path, type: e.type, sha: e.sha });
+      } else if (e.type === 'dir') {
+        const sub = await this.listDirectoryEntriesRecursive(owner, repo, e.path, branch);
+        out.push(...sub);
+      }
+    }
+    return out;
+  }
+
+  async getDownloads(forceRefresh: boolean = false): Promise<any[]> {
     const config = this.getConfig();
     if (!config) throw new Error('GitHub config not set');
     const endpointKey = `downloads:${config.owner}/${config.repo}`;
-    const path = `/repos/${config.owner}/${config.repo}/contents/downloads`;
     const tokenScope = `${config.owner}/${config.repo}`;
+    if (forceRefresh) {
+      this.hotEndpointCache.delete(endpointKey);
+    }
     const cached = this.getHotCache<any[]>(endpointKey, 2500);
     if (cached) {
       if (!this.hotEndpointRefresh.has(endpointKey)) {
-        const refresh = this.requestCoalesced(path, tokenScope)
-          .then((data) => {
-            const list = Array.isArray(data) ? data : [];
-            this.setHotCache(endpointKey, list);
-            return list;
-          })
-          .finally(() => this.hotEndpointRefresh.delete(endpointKey));
+        const refresh = this.loadDownloadsMerged(endpointKey, tokenScope).finally(() =>
+          this.hotEndpointRefresh.delete(endpointKey)
+        );
         this.hotEndpointRefresh.set(endpointKey, refresh);
       }
       return cached;
     }
 
     try {
-      const data = await this.requestCoalesced(path, tokenScope);
-      const list = Array.isArray(data) ? data : [];
-      this.setHotCache(endpointKey, list);
-      return list;
+      return await this.loadDownloadsMerged(endpointKey, tokenScope);
     } catch (err) {
       logger.warn('[GitHub] downloads listing failed', {
         error: err,
@@ -1547,7 +1656,7 @@ class GitHubClient {
     }
 
     if (!response.ok && path) {
-      const contentPath = `/repos/${config.owner}/${config.repo}/contents/${encodeURIComponent(path).replace(/%2F/g, '/')}`;
+      const contentPath = `/repos/${config.owner}/${config.repo}/contents/${encodeRepoContentsPath(path)}`;
       const fallback = await this.downloadBlobWithTimeout(`${API_BASE}${contentPath}`, headers, 45000);
       if (fallback.ok) {
         response = fallback;
@@ -1580,7 +1689,7 @@ class GitHubClient {
     if (!config) return { ok: false, reason: 'GitHub config not set' };
     try {
       const data = await this.request(
-        `/repos/${config.owner}/${config.repo}/contents/${encodeURIComponent(path).replace(/%2F/g, '/')}`
+        `/repos/${config.owner}/${config.repo}/contents/${encodeRepoContentsPath(path)}`
       );
       if (!data || typeof data !== 'object') return { ok: false, reason: 'File metadata unavailable' };
       return { ok: true };
@@ -1614,7 +1723,7 @@ class GitHubClient {
     if (!config) throw new Error('GitHub config not set');
 
     await this.request(
-      `/repos/${config.owner}/${config.repo}/contents/${path}`,
+      `/repos/${config.owner}/${config.repo}/contents/${encodeRepoContentsPath(path)}`,
       {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
@@ -1624,6 +1733,68 @@ class GitHubClient {
         }),
       }
     );
+    const segs = path.split('/');
+    const inv =
+      segs.length >= 3 ? `${segs[0]}/${segs[1]}` : path;
+    this.invalidateDownloadsArtifacts(config.owner, config.repo, inv);
+  }
+
+  async deleteDirectorySingleCommit(folderPath: string): Promise<void> {
+    const config = this.getConfig();
+    if (!config) throw new Error('GitHub config not set');
+    const pre = folderPath.replace(/\/+$/, '');
+    if (!pre.startsWith('downloads/') || pre.includes('..')) {
+      throw new CNSError('Invalid downloads path', ErrorCodes.NETWORK_ERROR, false);
+    }
+    const parts = pre.split('/').filter(Boolean);
+    if (parts.length !== 2) {
+      throw new CNSError('Folder delete expects downloads/<one-folder>', ErrorCodes.NETWORK_ERROR, false);
+    }
+    const branch = await this.getDefaultBranch();
+    const entries = await this.listDirectoryEntriesRecursive(config.owner, config.repo, pre, branch);
+    const fileEntries = entries.filter((e) => e.type === 'file' && e.sha);
+    const refData = await this.request(`/repos/${config.owner}/${config.repo}/git/ref/heads/${encodeURIComponent(branch)}`);
+    const commitSha = refData?.object?.sha;
+    if (!commitSha) throw new CNSError('Could not resolve branch ref', ErrorCodes.NETWORK_ERROR, false);
+    const commit = await this.request(`/repos/${config.owner}/${config.repo}/git/commits/${commitSha}`);
+    let workingTree = commit?.tree?.sha;
+    if (!workingTree) throw new CNSError('Could not resolve commit tree', ErrorCodes.NETWORK_ERROR, false);
+    if (fileEntries.length > 0) {
+      const treeDeletes = fileEntries.map((e) => ({
+        path: e.path,
+        mode: '100644' as const,
+        type: 'blob' as const,
+        sha: null as null,
+      }));
+      const batch = 280;
+      for (let i = 0; i < treeDeletes.length; i += batch) {
+        const slice = treeDeletes.slice(i, i + batch);
+        const t = await this.request(`/repos/${config.owner}/${config.repo}/git/trees`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base_tree: workingTree, tree: slice }),
+        });
+        workingTree = t.sha;
+      }
+    }
+    if (workingTree === commit.tree.sha && fileEntries.length === 0) {
+      return;
+    }
+    const newCommit = await this.request(`/repos/${config.owner}/${config.repo}/git/commits`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: `CNS: Remove ${pre}`,
+        tree: workingTree,
+        parents: [commitSha],
+      }),
+    });
+    await this.request(`/repos/${config.owner}/${config.repo}/git/refs/heads/${encodeURIComponent(branch)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sha: newCommit.sha }),
+    });
+    this.invalidateDownloadsArtifacts(config.owner, config.repo, pre);
   }
 
   async getFileContent(path: string): Promise<{ content: string; sha: string } | null> {
@@ -1639,7 +1810,7 @@ class GitHubClient {
     const load = (async () => {
       try {
         const data = await this.request(
-          `/repos/${config.owner}/${config.repo}/contents/${path}`
+          `/repos/${config.owner}/${config.repo}/contents/${encodeRepoContentsPath(path)}`
         );
         const base64Content = data.content.replace(/\s/g, '');
         const binaryString = atob(base64Content);
