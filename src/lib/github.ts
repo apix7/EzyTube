@@ -738,6 +738,12 @@ export interface GitHubConfig {
   repo: string;
 }
 
+export type NetworkProbeResult = {
+  ok: boolean;
+  code: 'OK' | 'DNS' | 'TIMEOUT' | 'BLOCKED' | 'NETWORK';
+  message?: string;
+};
+
 type CookieHealth = {
   ok: boolean;
   reason?: string;
@@ -964,6 +970,38 @@ class GitHubClient {
       workflowFile: 'download.yml',
       apiBase: API_BASE,
     };
+  }
+
+  async probeNetwork(timeoutMs: number = 7000): Promise<NetworkProbeResult> {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const resp = await fetch('https://api.github.com/zen', {
+        method: 'GET',
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      if (resp.ok) return { ok: true, code: 'OK' };
+      if (resp.status === 403 || resp.status === 429) {
+        return { ok: false, code: 'BLOCKED', message: `HTTP ${resp.status}` };
+      }
+      return { ok: false, code: 'NETWORK', message: `HTTP ${resp.status}` };
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return { ok: false, code: 'TIMEOUT', message: 'timeout' };
+      }
+      const m = err instanceof Error ? err.message : String(err);
+      const low = m.toLowerCase();
+      if (low.includes('name') || low.includes('dns') || low.includes('resolve')) {
+        return { ok: false, code: 'DNS', message: m };
+      }
+      if (low.includes('failed to fetch') || low.includes('networkerror')) {
+        return { ok: false, code: 'BLOCKED', message: m };
+      }
+      return { ok: false, code: 'NETWORK', message: m };
+    } finally {
+      window.clearTimeout(timer);
+    }
   }
 
   private async requestWithToken(token: string, path: string, options: RequestInit = {}, retries: number = 3): Promise<any> {
@@ -1294,22 +1332,16 @@ class GitHubClient {
     advanced: DownloadAdvancedOptions = DEFAULT_DOWNLOAD_ADVANCED
   ): Promise<{ status: number; dispatchAt: string; runHint: { afterTs: number; quality: string; format: string } }> {
     let lastErr: unknown = null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      try {
-        const status = await this.triggerWorkflowWithTimeout(url, quality, format, advanced, 12000);
-        const now = Date.now();
-        return {
-          status,
-          dispatchAt: new Date(now).toISOString(),
-          runHint: { afterTs: now - 5000, quality, format },
-        };
-      } catch (err) {
-        lastErr = err;
-        if (attempt < 2) {
-          const wait = 260 + Math.floor(Math.random() * 440) + attempt * 300;
-          await new Promise((resolve) => setTimeout(resolve, wait));
-        }
-      }
+    try {
+      const status = await this.triggerWorkflowWithTimeout(url, quality, format, advanced, 12000);
+      const now = Date.now();
+      return {
+        status,
+        dispatchAt: new Date(now).toISOString(),
+        runHint: { afterTs: now - 5000, quality, format },
+      };
+    } catch (err) {
+      lastErr = err;
     }
     const timeoutLike =
       (lastErr instanceof Error && /dispatch timeout/i.test(lastErr.message)) ||
