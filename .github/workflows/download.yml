@@ -89,24 +89,20 @@ jobs:
           cookies.txt
           downloads
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-
     - name: Install dependencies
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        python -m pip install --upgrade pip
-        pip install yt-dlp[default,EJS]
-        sudo apt-get update
-        sudo apt-get install -y ca-certificates ffmpeg
+        python3 -m pip install --user yt-dlp[default,EJS]
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        if ! command -v ffmpeg >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+        fi
+        if ! command -v node >/dev/null 2>&1; then
+          sudo apt-get update
+          sudo apt-get install -y nodejs npm
+        fi
 
     - name: Create downloads directory
       run: mkdir -p downloads
