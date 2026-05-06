@@ -143,13 +143,33 @@ function App() {
       }
       setNetworkError('اتصال برنامه به GitHub قطع است. احتمال فایروال/ DNS (مثل svchost) یا پروکسی نادرست.');
     };
-    void check();
-    const id = window.setInterval(() => {
+    const onOnline = () => {
       void check();
-    }, 20000);
+    };
+    const onOffline = () => {
+      if (cancelled) return;
+      setNetworkError('اتصال برنامه به GitHub قطع است. احتمال فایروال/ DNS (مثل svchost) یا پروکسی نادرست.');
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void check();
+      }
+    };
+    void check();
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    document.addEventListener('visibilitychange', onVisible);
+    const id = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void check();
+      }
+    }, 300000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, [hasConfig]);
 

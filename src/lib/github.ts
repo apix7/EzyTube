@@ -515,9 +515,42 @@ class GitHubClient {
         cache: 'no-store',
         signal: controller.signal,
       });
-      if (resp.ok) return { ok: true, code: 'OK' };
+      if (resp.ok) {
+        if (url.endsWith('/rate_limit')) {
+          const data = (await resp.clone().json().catch(() => null)) as
+            | { rate?: { remaining?: number; reset?: number }; resources?: { core?: { remaining?: number; reset?: number } } }
+            | null;
+          const remaining =
+            typeof data?.rate?.remaining === 'number'
+              ? data.rate.remaining
+              : typeof data?.resources?.core?.remaining === 'number'
+                ? data.resources.core.remaining
+                : null;
+          const resetSec =
+            typeof data?.rate?.reset === 'number'
+              ? data.rate.reset
+              : typeof data?.resources?.core?.reset === 'number'
+                ? data.resources.core.reset
+                : null;
+          if (remaining !== null && remaining <= 0) {
+            const err = new CNSError('Rate limited (probe)', ErrorCodes.RATE_LIMITED, true, {
+              resetUtcMs: resetSec && Number.isFinite(resetSec) ? resetSec * 1000 : null,
+              retryAfterSec: null,
+            });
+            toastGithubRateLimitIfAny(err);
+          }
+        }
+        return { ok: true, code: 'OK' };
+      }
       if (resp.status === 401) return { ok: false, code: 'AUTH', message: `HTTP ${resp.status}` };
-      if (resp.status === 403 || resp.status === 429) return { ok: true, code: 'OK' };
+      if (resp.status === 403 || resp.status === 429) {
+        const errorData = (await resp.clone().json().catch(() => ({}))) as Record<string, unknown>;
+        const message = (typeof errorData.message === 'string' && errorData.message) || `HTTP ${resp.status}`;
+        if (isPrimaryGithubRateLimit(resp.status, message, resp)) {
+          toastGithubRateLimitIfAny(makeGithubRateLimitError(resp.status, resp, message));
+        }
+        return { ok: true, code: 'OK' };
+      }
       if (resp.status >= 500) return { ok: true, code: 'OK' };
       return { ok: false, code: 'NETWORK', message: `HTTP ${resp.status}` };
     } catch (err) {

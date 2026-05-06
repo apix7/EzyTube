@@ -3,10 +3,21 @@ import ReactDOM from 'react-dom/client'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import App from './App'
 import { logger } from './lib/logger'
+import { showUserToast } from './lib/userToast'
 import './index.css'
+
+declare global {
+  interface Window {
+    cnsToast?: (message: string, variant?: 'error' | 'info') => void
+  }
+}
 
 logger.init()
 logger.info('App startup initiated')
+
+window.cnsToast = (message: string, variant: 'error' | 'info' = 'error') => {
+  showUserToast(message, variant)
+}
 
 const root = document.getElementById('root')
 if (!root) {
