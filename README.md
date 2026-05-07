@@ -74,8 +74,6 @@ MP4, MP3
         <tr>
             <td>مک</td>
             <td>
-                <a href="https://github.com/MercilessMarcel/CNS/releases/download/v1.2.2/CNS_1.2.2_aarch64.dmg"><img src="https://img.shields.io/badge/DMG-Apple_Silicon-007AFF.svg?logo=apple"></a><br>
-                <a href="https://github.com/MercilessMarcel/CNS/releases/download/v1.2.2/CNS_1.2.2_x64.dmg"><img src="https://img.shields.io/badge/DMG-Intel-ea005e.svg?logo=apple"></a><br>
                 <a href="https://github.com/MercilessMarcel/CNS/releases/download/v1.2.2/CNS_aarch64.app.tar.gz"><img src="https://img.shields.io/badge/APP-ARM64-34C759.svg?logo=apple"></a><br>
                 <a href="https://github.com/MercilessMarcel/CNS/releases/download/v1.2.2/CNS_x64.app.tar.gz"><img src="https://img.shields.io/badge/APP-x64-FF9500.svg?logo=apple"></a>
             </td>

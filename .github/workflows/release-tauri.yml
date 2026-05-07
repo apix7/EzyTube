@@ -16,10 +16,10 @@ jobs:
         include:
         - platform: macos-latest
           container: ""
-          args: --target aarch64-apple-darwin
+          args: --target aarch64-apple-darwin --bundles app
         - platform: macos-latest
           container: ""
-          args: --target x86_64-apple-darwin
+          args: --target x86_64-apple-darwin --bundles app
         - platform: ubuntu-22.04
           container: ""
           args: --bundles deb
