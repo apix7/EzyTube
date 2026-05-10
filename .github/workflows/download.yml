@@ -245,11 +245,8 @@ jobs:
           echo "INFO: skipping embed-thumbnail for webm (yt-dlp/ffmpeg unsupported); keeping JPG sidecar"
         fi
 
-        VIDEO_FMTSEL="(${QUALITY_OPT})+mergeall[vcodec=none]"
-        if [ "$MERGE_FORMAT" = "webm" ]; then
-          VIDEO_FMTSEL="(${QUALITY_OPT})+mergeall[vcodec=none][ext=webm]/$QUALITY_OPT"
-        fi
-        VIDEO_EX="--embed-subs --sub-langs all --audio-multistreams"
+        VIDEO_FMTSEL="$QUALITY_OPT"
+        VIDEO_EX="--embed-subs --sub-langs all"
 
         if [ "$FORMAT" = "mp3" ] || [ "$QUALITY" = "audio" ]; then
           OUTPUT_TEMPLATE="downloads/%(title)s--%(id)s/%(title)s--%(id)s.%(ext)s"
