@@ -143,7 +143,7 @@ function advancedSubmitKey(a: DownloadAdvancedOptions): string {
 
 export function InputNode({ onAddPending, onPatchJob, hasActiveJob, disabled, downloadBusy, archiveItems = [] }: InputNodeProps) {
   const [text, setText] = useState('');
-  const [quality, setQuality] = useState<string>('best');
+  const [quality, setQuality] = useState<string>('480p');
   const [format, setFormat] = useState<string>('mp4');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
