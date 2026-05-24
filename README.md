@@ -221,7 +221,7 @@ GitHub محدودیت استفاده در ساعت دارد
 - [JetBrains Mono](https://www.jetbrains.com/lp/mono/) - فونت monospace
 - [Lucide](https://lucide.dev) - آیکون‌ها
 
-تشکر ویژه از تمام توسعه‌دهندگان، از جمله apix7.
+تشکر ویژه از تمام توسعه‌دهندگان
 
 ## 🎯 حمایت از پروژه
 
