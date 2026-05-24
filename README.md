@@ -1,245 +1,201 @@
 <div align="center">
 
-<img width="1815" height="570" alt="CNS ASCII" src="https://github.com/user-attachments/assets/1f29a8e0-98a1-4794-b66c-4a09db94c055"/>
+# EzyTube
 
-[![Downloads](https://img.shields.io/github/downloads/MercilessMarcel/CNS/total?style=flat-square&logo=github)](https://github.com/MercilessMarcel/CNS/releases/)
-[![Last Version](https://img.shields.io/github/release/MercilessMarcel/CNS/all.svg?style=flat-square)](https://github.com/MercilessMarcel/CNS/releases/)
-[![Last Release Date](https://img.shields.io/github/release-date/MercilessMarcel/CNS.svg?style=flat-square)](https://github.com/MercilessMarcel/CNS/releases/)
-[![Stars](https://img.shields.io/github/stars/MercilessMarcel/CNS?style=flat-square)](https://github.com/MercilessMarcel/CNS/stargazers)
+### A focused desktop YouTube downloader built around feeds, archives, and GitHub-powered jobs.
+
+<p>
+  <img alt="React" src="https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5-3178c6?style=flat-square&logo=typescript">
+  <img alt="Vite" src="https://img.shields.io/badge/Vite-8-646cff?style=flat-square&logo=vite">
+  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-2-ffc131?style=flat-square&logo=tauri">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-2ea44f?style=flat-square">
+</p>
+
+<br>
+
+<img src="./demo.png" alt="EzyTube desktop interface" width="920">
 
 </div>
 
-## سی‌ان‌اس چیست؟
+## Origin
 
-سی‌ان‌اس یک ابزار قدرتمند برای دانلود ویدیوهای یوتیوب با استفاده از زیرساخت گیت‌هاب است. سی‌ان‌اس به شما این امکان را می‌دهد که بدون نیاز به وی‌پی‌ان و با سرعت بالا، ویدیوهای مورد نظر خود را دانلود و مدیریت کنید. این برنامه از قدرت سرورهای گیت‌هاب برای دانلود بهره می‌برد و حتی با اینترنت کند، تجربه دانلود سریع و پایداری را ارائه می‌دهد.
+EzyTube started as a fork of CNS by MercilessMarcel. The original project remains the upstream reference for the GitHub-backed YouTube downloader flow.
 
+## What Is EzyTube?
 
-<img width="1440" height="1024" alt="CNS Showcase Windows" src="https://github.com/user-attachments/assets/f2774d8c-2e57-44da-b5ae-4881e563e022" />
+EzyTube is a desktop app for finding, downloading, and managing YouTube videos without turning the workflow into a mess of tabs, terminals, and half-finished files.
 
+Paste a link when you already know what you want, or use the built-in YouTube feed to search, follow channels, browse new videos, and send anything straight into a download job. EzyTube uses GitHub Actions as the worker, keeps completed files in your own repository, and brings the result back into a clean local archive.
 
+The interface is Persian-first, but the idea is simple everywhere: search, send, track, archive.
 
+## Highlights
 
+- Desktop-first workflow with a focused Tauri shell
+- Console mode for quick link downloads
+- YouTube feed mode for search, channel following, and new-video tracking
+- Live job cards with progress, logs, errors, and completion state
+- Archive view for downloaded videos, audio, deletion, and local retrieval
+- `MP4` and `MP3` output
+- Quality choices for `Best`, `1080p`, `720p`, and `480p`
+- Advanced video options for container, codec, and bitrate
+- Automatic handling for large files through split ZIP parts
+- Persian error messages and practical troubleshooting hints
+- Safer local handling for GitHub tokens in the desktop app
 
+## How It Works
 
+EzyTube does not download heavy media directly inside the UI. Instead, it prepares a GitHub Actions job in a repository you control.
 
+1. You choose a video, quality, and format.
+2. EzyTube dispatches a workflow to GitHub Actions.
+3. The worker uses `yt-dlp` to produce the final file.
+4. Finished files are committed into your download archive.
+5. EzyTube shows the result and lets you download or remove it.
 
-## 🚀 امکانات اصلی
+This keeps the desktop app light while still giving you a persistent archive and visible job history.
 
-⭐ رابط کاربری ساده و کاربرپسند با طراحی مدرن
+## Setup
 
-✈️ پشتیبانی از چند پلتفرم: ویندوز، لینوکس و مک
+### 1. GitHub Token
 
-🔍 دانلود با سرعت بالا بدون نیاز به VPN
+EzyTube needs a GitHub personal access token so it can create or update the download repository and dispatch workflows.
 
-🟡 پشتیبانی از انواع کیفیت‌ها:
-Best Quality, 1080p, 720p, 480p
+1. Sign in to [github.com](https://github.com)
+2. Open **Settings**
+3. Go to **Developer settings** > **Personal access tokens** > **Tokens (classic)**
+4. Create a new classic token
+5. Enable `repo` and `workflow`
+6. Copy the token into EzyTube settings
 
-🟡 پشتیبانی از فرمت‌های مختلف:
-MP4, MP3
+> [!IMPORTANT]
+> Treat the GitHub token like a password. Do not paste it into screenshots, issues, chats, logs, or committed files.
 
-🔄 مدیریت خودکار فایل‌های بزرگ با قابلیت تقسیم‌بندی
+### 2. YouTube Cookies
 
-🔎 داشبورد مدیریت دانلود با آرشیو کامل
+YouTube often blocks automated downloads without valid account cookies. EzyTube lets you upload a `cookies.txt` export from your own browser session.
 
-🌙 رایگان، منبع‌باز و بدون تبلیغات
+1. Install [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
+2. Sign in to [youtube.com](https://youtube.com)
+3. Export cookies as `cookies.txt`
+4. Paste the file contents into EzyTube settings
+5. Save and upload the cookies
 
-⚙ راه‌اندازی ساده و خودکار	
+Cookies expire. If downloads start failing after working before, export fresh cookies and save them again.
 
-📱 نسخه دسکتاپ آماده برای استفاده
+### 3. Auto Setup
 
-⭐ کاملا فارسی و بهینه برای کاربران ایرانی
+After the token is entered, use the auto setup button in the app. EzyTube prepares the download repository and installs the workflow it needs.
 
-## 📥 دانلود و نصب
+## Using EzyTube
 
-### دانلود مستقیم نسخه دسکتاپ (v1.2.2)
+### Console Mode
 
-<div dir="rtl" align="right">
-   <table>
-    <thead align="right">
-        <tr>
-            <th>سیستم عامل</th>
-            <th>دانلود</th>
-        </tr>
-    </thead>
-    <tbody align="right">
-        <tr>
-            <td>ویندوز</td>
-            <td>
-                <a href="https://github.com/MercilessMarcel/CNS/releases/download/v1.2.2/CNS_1.2.2_x64-setup.exe"><img src="https://img.shields.io/badge/Setup-x64-0078d7.svg?logo=windows"></a><br>
-                <a href="https://github.com/MercilessMarcel/CNS/releases/download/v1.2.2/CNS_1.2.2_x64_en-US.msi"><img src="https://img.shields.io/badge/MSI-x64-2d7d9a.svg?logo=windows"></a>
-            </td>
-        </tr>
-        <tr>
-            <td>لینوکس</td>
-            <td>
-                <a href="https://github.com/MercilessMarcel/CNS/releases/download/v1.2.2/cns_1.2.2_amd64.deb"><img src="https://img.shields.io/badge/DEB-x64-FF9966.svg?logo=debian"></a>
-            </td>
-        </tr>
-        <tr>
-            <td>مک</td>
-            <td>
-                <a href="https://github.com/MercilessMarcel/CNS/releases/download/v1.2.2/CNS_aarch64.app.tar.gz"><img src="https://img.shields.io/badge/APP-ARM64-34C759.svg?logo=apple"></a><br>
-                <a href="https://github.com/MercilessMarcel/CNS/releases/download/v1.2.2/CNS_x64.app.tar.gz"><img src="https://img.shields.io/badge/APP-x64-FF9500.svg?logo=apple"></a>
-            </td>
-        </tr>
-    </tbody>
-</table>
-</div>
+Use console mode when you already have a YouTube link.
 
-### ساخت از روی سورس
+1. Paste one video URL
+2. Pick `MP4` or `MP3`
+3. Pick quality for video downloads
+4. Adjust advanced options when needed
+5. Submit the job and follow the live status card
 
-اگر می‌خواهید خودتان برنامه را بسازید:
+### Feed Mode
+
+Use feed mode when you want to browse before downloading.
+
+- Search YouTube videos from inside the app
+- Add channels or searches as followed sources
+- See new videos marked with `NEW`
+- Open a video drawer for details
+- Send the selected video directly to the download queue
+
+### Archive
+
+Completed outputs stay in the archive. From there you can download them locally, remove old files, or inspect split-file downloads.
+
+For large outputs, EzyTube may create ZIP parts:
+
+1. Download every part into the same folder
+2. Open the `.zip` file with WinRAR or 7-Zip
+3. The `.z01`, `.z02`, and later parts are joined automatically during extraction
+
+## Development
+
+EzyTube is built with Vite, React, TypeScript, and Tauri.
 
 ```bash
-# نصب وابستگی‌ها
+# install frontend dependencies
 npm install
 
-# ساخت نسخه دسکتاپ
-npm run desktop:build
+# start the Vite dev server
+npm run dev
+
+# type-check, build, and verify dist output
+npm run build
+
+# preview the production build
+npm run preview
 ```
 
-**پیش‌نیاز:** نیاز به نصب `Rust stable` دارید:
-```bash
-rustup default stable
-```
+There is no dedicated test script yet. Use `npm run build` as the required validation step for changes.
 
-خروجی‌ها در پوشه `src-tauri/target/release/bundle/` قرار می‌گیرند.
+## Project Layout
 
-### ساخت نسخه قابل حمل (Portable)
+- `src/` contains the frontend entry points and global styles
+- `src/components/` contains UI components for input, feeds, archive cards, modals, and diagnostics
+- `src/lib/` contains GitHub integration, archive logic, errors, logging, i18n, and helpers
+- `public/` contains static assets and local fonts
+- `src-tauri/` contains the Rust/Tauri desktop shell
+- `scripts/` contains small Node utilities used by package scripts
+- `docs/` contains implementation notes for specific app behavior
 
-برای ویندوز:
-```bash
-npm run desktop:build:portable
-```
-
-فایل اجرایی در `src-tauri/target/release/` ساخته می‌شود.
-
-## ⚙️ راه‌اندازی و آموزش
-
-### مرحله ۱: ساخت توکن GitHub
-
-برای استفاده از CNS، نیاز به یک توکن دسترسی شخصی از GitHub دارید:
-
-1. به [github.com](https://github.com) بروید و وارد شوید
-2. روی عکس پروفایل کلیک کنید و **Settings** را انتخاب کنید
-3. از منوی چپ، **Developer settings** را باز کنید
-4. **Personal access tokens** > **Tokens (classic)** را انتخاب کنید
-5. روی **Generate new token (classic)** کلیک کنید
-6. در قسمت **Note** نامی مانند "CNS App" وارد کنید
-7. **⚠️ مهم:** حتماً دسترسی‌های `repo` و `workflow` را فعال کنید
-8. روی **Generate token** کلیک و توکن را کپی کنید
-
-> 💡 **نکته امنیتی:** توکن را در جای امن نگه دارید و با هیچ‌کس به اشتراک نگذارید.
-
-### مرحله ۲: دریافت کوکی‌های YouTube
-
-برای دانلود ویدیو، به کوکی‌های حساب یوتیوب نیاز دارید:
-
-1. افزونه [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) را نصب کنید
-2. به [youtube.com](https://youtube.com) بروید و وارد شوید
-3. روی آیکون افزونه کلیک و **Export** را انتخاب کنید
-4. فایل `cookies.txt` را دانلود کنید
-5. محتویات فایل را در تنظیمات CNS وارد کنید
-
-### مرحله ۳: راه‌اندازی خودکار
-
-1. برنامه CNS را باز کنید
-2. توکن GitHub را وارد کنید
-3. روی **راه‌اندازی خودکار** کلیک کنید
-4. برنامه به‌صورت خودکار مخزن `cns-downloads` را می‌سازد
-
-## 📖 نحوه استفاده
-
-### دانلود ویدیو
-
-1. آدرس ویدیوی یوتیوب را کپی کنید
-2. در کادر ورودی پیست کنید
-3. کیفیت دلخواه را انتخاب کنید (Best, 1080p, 720p, 480p)
-4. فرمت خروجی را انتخاب کنید (MP4, MP3)
-5. روی دکمه **دریافت** کلیک کنید
-
-### مدیریت دانلودها
-
-در بخش **آرشیو دانلود**:
-- لیست تمام فایل‌های دانلودشده را مشاهده کنید
-- فایل‌ها را روی کامپیوتر خود دانلود کنید
-- فایل‌های غیرضروری را حذف کنید
-
-### ترکیب فایل‌های تقسیم‌شده
-
-برای فایل‌های بزرگتر از ۹۵MB که به بخش‌های ZIP تقسیم می‌شوند:
-
-1. همه بخش‌ها را دانلود کنید
-2. فایل با پسوند `.zip` را باز کنید
-3. ویدیو به‌صورت خودکار از بخش‌ها استخراج می‌شود
-
-## 🛠️ عیب‌یابی
-
-### دانلود شروع نمی‌شود
-
-توکن GitHub را بررسی کنید
-مطمئن شوید مخزن ساخته شده است
-کوکی‌های YouTube را به‌روز کنید
-
-### خطای "cookies.txt not found"
-
-کوکی‌ها را در تنظیمات بارگذاری کنید
-فرمت فایل کوکی را بررسی کنید
-
-### خطای "Rate limited"
-
-چند دقیقه صبر کنید
-GitHub محدودیت استفاده در ساعت دارد
-
----
-## ⚠️ هشدار امنیتی مهم
+## Security Notes
 
 > [!CAUTION]
-> **توکن GitHub و کوکی‌های YouTube بسیار حساس هستند.**
-> 
-> - مثل رمز عبور اصلی حسابتون مراقبشون باشید
-> - هرگز آن‌ها را در چت، اسکرین‌شات، ایمیل یا هیچ پلتفرمی به اشتراک نگذارید
-> - اگر مشکوک به لو رفتن شدید، **فوراً** توکن را در GitHub revoke کنید
-> - فقط در دستگاه و مرورگر شخصی خودتان استفاده کنید
----
+> GitHub tokens and YouTube cookies are sensitive credentials.
+>
+> - Never commit them
+> - Never post them in issues or discussions
+> - Hide them in screenshots
+> - Revoke the GitHub token immediately if it may have leaked
+> - Refresh YouTube cookies from your own trusted browser only
 
-## 🙏 سپاسگزاری‌ها
+## Troubleshooting
 
-این پروژه با الهام از ابزارهای زیر ساخته شده است:
+### A Download Does Not Start
 
-- [github-sandbox](https://github.com/maanimis/github-sandbox) - ایده اصلی استفاده از GitHub Actions
-- [sandbox](https://github.com/nscl5/sandbox/) - روش تقسیم‌بندی فایل‌ها
+- Check that GitHub is reachable from your network
+- Confirm the token has `repo` and `workflow` access
+- Run auto setup again if the workflow is missing
+- Refresh YouTube cookies if the failure mentions cookies, login, bot checks, or YouTube access
 
-ابزارها و منابع مورد استفاده:
+### Cookies Keep Failing
 
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - موتور دانلود ویدیو
-- [Tauri](https://tauri.app) - فریم‌ورک اپلیکیشن دسکتاپ
-- [React](https://react.dev) - رابط کاربری
-- [Vite](https://vitejs.dev) - ابزار ساخت
-- [Tailwind CSS](https://tailwindcss.com) - استایل‌دهی
-- [Vazirmatn](https://github.com/rastikerdar/vazirmatn) - فونت فارسی
-- [JetBrains Mono](https://www.jetbrains.com/lp/mono/) - فونت monospace
-- [Lucide](https://lucide.dev) - آیکون‌ها
+- Export cookies from the browser where you are actually signed in
+- Paste the complete `cookies.txt` contents
+- Avoid editing the cookie text manually
+- Export a new file if the previous one is old
 
-تشکر ویژه از تمام توسعه‌دهندگان، از جمله apix7.
+### GitHub Rate Limit
 
-## 🎯 حمایت از پروژه
+Wait a few minutes and retry. If the app keeps reporting rate limits, reduce repeated refreshes and avoid dispatching many jobs in a short time.
 
-ساده‌ترین راه حمایت از ما کلیک کردن روی ستاره (⭐) بالای همین صفحه است.
+## Credits
 
-[![Stargazers over time](https://starchart.cc/MercilessMarcel/CNS.svg?background=%23181e19&axis=%236fb08c&line=%23495948)](https://starchart.cc/MercilessMarcel/CNS)
+EzyTube is built with:
 
-## 📞 ارتباط با ما
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- [Tauri](https://tauri.app)
+- [React](https://react.dev)
+- [Vite](https://vite.dev)
+- [Tailwind CSS](https://tailwindcss.com)
+- [Vazirmatn](https://github.com/rastikerdar/vazirmatn)
+- [JetBrains Mono](https://www.jetbrains.com/lp/mono/)
+- [Lucide](https://lucide.dev)
 
-اگر سوال، پیشنهاد یا گزارش باگ دارید:
+It also builds on the broader idea of using GitHub Actions as a personal media worker and archive pipeline.
 
-- [GitHub Issues](https://github.com/MercilessMarcel/CNS/issues) - گزارش مشکلات
-- [GitHub Discussions](https://github.com/MercilessMarcel/CNS/discussions) - بحث و تبادل نظر
+## License
 
-## 📄 مجوز
-
-این پروژه تحت مجوز [MIT](LICENSE) منتشر شده است.
-
----
-
-<img width="1920" height="1080" alt="[SEEK THE TRUTH BEYOND THE WALLS]" src="https://github.com/user-attachments/assets/c8eb4d3d-7d47-4cb3-adb2-e2663d9ff429" />
+This project is released under the [MIT License](LICENSE).
