@@ -1,8 +1,8 @@
 <div align="center">
 
-# EzyTube
+# CNS
 
-### A focused desktop YouTube downloader built around feeds, archives, and GitHub-powered jobs.
+### دانلودر دسکتاپ یوتیوب با رابط فارسی، فید و آرشیو مبتنی بر GitHub Actions
 
 <p>
   <img alt="React" src="https://img.shields.io/badge/React-18-61dafb?style=flat-square&logo=react">
@@ -14,188 +14,217 @@
 
 <br>
 
-<img src="./demo.png" alt="EzyTube desktop interface" width="920">
+<img src="./demo.png" alt="نمای برنامه دسکتاپ CNS" width="920">
 
 </div>
 
-## Origin
+<div dir="rtl" align="right">
 
-EzyTube started as a fork of CNS by MercilessMarcel. The original project remains the upstream reference for the GitHub-backed YouTube downloader flow.
+## معرفی
 
-## What Is EzyTube?
+`CNS` یک برنامه دسکتاپ برای پیدا کردن، دانلود کردن و مدیریت ویدیوهای یوتیوب است. هدف برنامه این است که فرایند دانلود به چند پنجره مرورگر، چند ابزار خط فرمان و چند فایل نیمه‌کاره تبدیل نشود.
 
-EzyTube is a desktop app for finding, downloading, and managing YouTube videos without turning the workflow into a mess of tabs, terminals, and half-finished files.
+در حالت ساده می‌توانید لینک یک ویدیو را وارد کنید و خروجی `MP4` یا `MP3` بگیرید. در حالت فید هم می‌توانید داخل خود برنامه جستجو کنید، کانال‌ها یا عبارت‌های جستجو را دنبال کنید، و ویدیوهای جدید را مستقیم به صف دانلود بفرستید.
 
-Paste a link when you already know what you want, or use the built-in YouTube feed to search, follow channels, browse new videos, and send anything straight into a download job. EzyTube uses GitHub Actions as the worker, keeps completed files in your own repository, and brings the result back into a clean local archive.
+رابط برنامه فارسی‌محور است، اما بخش سنگین دانلود داخل رابط اجرا نمی‌شود. `CNS` برای هر دانلود یک اجرای GitHub Actions می‌سازد، فایل نهایی را در مخزن دانلودهای شما نگه می‌دارد و نتیجه را در آرشیو محلی برنامه نمایش می‌دهد.
 
-The interface is Persian-first, but the idea is simple everywhere: search, send, track, archive.
+## قابلیت‌ها
 
-## Highlights
+- برنامه دسکتاپ بر پایه `Tauri` برای استفاده بدون درگیر شدن با سرور توسعه
+- رابط فارسی برای تنظیمات، خطاها، عیب‌یابی و مسیر اصلی دانلود
+- حالت کنسول برای دانلود سریع با لینک مستقیم یوتیوب
+- حالت فید برای جستجو، دنبال کردن کانال‌ها و دیدن ویدیوهای جدید
+- صف دانلود با وضعیت زنده، پیشرفت، لاگ‌ها و پیام خطای قابل فهم
+- آرشیو فایل‌های دانلودشده با امکان دریافت محلی، حذف و مشاهده جزئیات
+- خروجی `MP4` و `MP3`
+- انتخاب کیفیت‌های `Best`، `1080p`، `720p` و `480p`
+- تنظیمات پیشرفته برای کانتینر، کدک و بیت‌ریت ویدیو
+- مدیریت فایل‌های بزرگ با ساخت ZIP چندبخشی
+- نگهداری امن‌تر توکن گیت‌هاب در نسخه دسکتاپ
+- پنل عیب‌یابی برای بررسی اتصال، مخزن، توکن و خطاهای رایج
 
-- Desktop-first workflow with a focused Tauri shell
-- Console mode for quick link downloads
-- YouTube feed mode for search, channel following, and new-video tracking
-- Live job cards with progress, logs, errors, and completion state
-- Archive view for downloaded videos, audio, deletion, and local retrieval
-- `MP4` and `MP3` output
-- Quality choices for `Best`, `1080p`, `720p`, and `480p`
-- Advanced video options for container, codec, and bitrate
-- Automatic handling for large files through split ZIP parts
-- Persian error messages and practical troubleshooting hints
-- Safer local handling for GitHub tokens in the desktop app
+## روش کار
 
-## How It Works
+`CNS` فایل‌های حجیم را داخل خود برنامه دانلود نمی‌کند. برنامه فقط کار دانلود را آماده و کنترل می‌کند؛ اجرای اصلی در مخزن گیت‌هاب شما انجام می‌شود.
 
-EzyTube does not download heavy media directly inside the UI. Instead, it prepares a GitHub Actions job in a repository you control.
+1. شما لینک، فرمت و کیفیت را انتخاب می‌کنید.
+2. برنامه یک `workflow_dispatch` برای GitHub Actions ارسال می‌کند.
+3. ورک‌فلو با کمک `yt-dlp` و `ffmpeg` فایل نهایی را می‌سازد.
+4. فایل، تصویر بندانگشتی و فراداده در پوشه `downloads/` همان مخزن ثبت می‌شود.
+5. برنامه آرشیو را تازه‌سازی می‌کند و فایل آماده را برای دانلود یا حذف نشان می‌دهد.
 
-1. You choose a video, quality, and format.
-2. EzyTube dispatches a workflow to GitHub Actions.
-3. The worker uses `yt-dlp` to produce the final file.
-4. Finished files are committed into your download archive.
-5. EzyTube shows the result and lets you download or remove it.
+این معماری باعث می‌شود برنامه سبک بماند، تاریخچه دانلودها در اختیار خودتان باشد و وضعیت هر دانلود از مسیر GitHub Actions قابل پیگیری باشد.
 
-This keeps the desktop app light while still giving you a persistent archive and visible job history.
+## پیش‌نیازها
 
-## Setup
-
-### 1. GitHub Token
-
-EzyTube needs a GitHub personal access token so it can create or update the download repository and dispatch workflows.
-
-1. Sign in to [github.com](https://github.com)
-2. Open **Settings**
-3. Go to **Developer settings** > **Personal access tokens** > **Tokens (classic)**
-4. Create a new classic token
-5. Enable `repo` and `workflow`
-6. Copy the token into EzyTube settings
+- یک حساب گیت‌هاب
+- یک توکن شخصی گیت‌هاب با دسترسی‌های `repo` و `workflow`
+- کوکی معتبر یوتیوب از مرورگری که در آن وارد حساب خود شده‌اید
+- برای توسعه محلی: `Node.js` و `npm`
 
 > [!IMPORTANT]
-> Treat the GitHub token like a password. Do not paste it into screenshots, issues, chats, logs, or committed files.
+> توکن گیت‌هاب و کوکی‌های یوتیوب اطلاعات حساس هستند. آن‌ها را در اسکرین‌شات، گزارش خطا، چت، لاگ یا فایل‌های مخزن منتشر نکنید.
 
-### 2. YouTube Cookies
+## راه‌اندازی برنامه
 
-YouTube often blocks automated downloads without valid account cookies. EzyTube lets you upload a `cookies.txt` export from your own browser session.
+### ۱. ساخت توکن گیت‌هاب
 
-1. Install [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)
-2. Sign in to [youtube.com](https://youtube.com)
-3. Export cookies as `cookies.txt`
-4. Paste the file contents into EzyTube settings
-5. Save and upload the cookies
+1. وارد [github.com](https://github.com) شوید.
+2. از بخش **Settings** وارد **Developer settings** شوید.
+3. مسیر **Personal access tokens** و سپس **Tokens (classic)** را باز کنید.
+4. یک توکن کلاسیک جدید بسازید.
+5. دسترسی‌های `repo` و `workflow` را فعال کنید.
+6. توکن را در بخش تنظیمات `CNS` وارد کنید.
 
-Cookies expire. If downloads start failing after working before, export fresh cookies and save them again.
+### ۲. انتخاب یا ساخت مخزن دانلودها
 
-### 3. Auto Setup
+در تنظیمات برنامه نام مخزن دانلودها را وارد کنید. مقدار پیش‌فرض `cns-downloads` است. با گزینه راه‌اندازی خودکار، برنامه مخزن و ورک‌فلوی لازم را آماده یا به‌روزرسانی می‌کند.
 
-After the token is entered, use the auto setup button in the app. EzyTube prepares the download repository and installs the workflow it needs.
+این مخزن محل نگهداری فایل‌های خروجی، فراداده‌ها، تصاویر و فایل `cookies.txt` است. اگر مخزن از قبل وجود داشته باشد، برنامه تلاش می‌کند همان را آماده کند.
 
-## Using EzyTube
+### ۳. افزودن کوکی‌های یوتیوب
 
-### Console Mode
+یوتیوب در بسیاری از موارد دانلود خودکار را بدون کوکی معتبر مسدود می‌کند. برای همین باید محتوای فایل `cookies.txt` را از مرورگر خودتان به برنامه بدهید.
 
-Use console mode when you already have a YouTube link.
+1. افزونه [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc) را نصب کنید.
+2. در همان مرورگر وارد [youtube.com](https://youtube.com) شوید.
+3. کوکی‌ها را با فرمت `cookies.txt` خروجی بگیرید.
+4. محتوای فایل را در بخش کوکی‌های تنظیمات `CNS` بچسبانید.
+5. گزینه آپلود کوکی‌ها را بزنید تا فایل در مخزن دانلودها ذخیره شود.
 
-1. Paste one video URL
-2. Pick `MP4` or `MP3`
-3. Pick quality for video downloads
-4. Adjust advanced options when needed
-5. Submit the job and follow the live status card
+کوکی‌ها تاریخ انقضا دارند. اگر دانلودهایی که قبلا کار می‌کردند ناگهان با خطای ورود، کوکی یا تشخیص ربات شکست خوردند، یک فایل تازه خروجی بگیرید و دوباره ذخیره کنید.
 
-### Feed Mode
+## استفاده
 
-Use feed mode when you want to browse before downloading.
+### حالت کنسول
 
-- Search YouTube videos from inside the app
-- Add channels or searches as followed sources
-- See new videos marked with `NEW`
-- Open a video drawer for details
-- Send the selected video directly to the download queue
+حالت کنسول برای وقتی است که لینک ویدیو را از قبل دارید.
 
-### Archive
+1. یک لینک معتبر یوتیوب وارد کنید.
+2. خروجی `MP4` یا `MP3` را انتخاب کنید.
+3. برای ویدیو، کیفیت مورد نظر را انتخاب کنید.
+4. در صورت نیاز تنظیمات پیشرفته کانتینر، کدک و بیت‌ریت را تغییر دهید.
+5. دانلود را ثبت کنید و وضعیت آن را در کارت زنده دنبال کنید.
 
-Completed outputs stay in the archive. From there you can download them locally, remove old files, or inspect split-file downloads.
+برنامه در هر لحظه فقط یک دانلود فعال را می‌پذیرد تا وضعیت صف و آرشیو قابل پیش‌بینی بماند.
 
-For large outputs, EzyTube may create ZIP parts:
+### حالت فید یوتیوب
 
-1. Download every part into the same folder
-2. Open the `.zip` file with WinRAR or 7-Zip
-3. The `.z01`, `.z02`, and later parts are joined automatically during extraction
+حالت فید برای پیدا کردن ویدیو داخل خود برنامه است.
 
-## Development
+- جستجوی ویدیوهای یوتیوب از داخل برنامه
+- دنبال کردن کانال‌ها یا عبارت‌های جستجو
+- نمایش ویدیوهای تازه با نشان `NEW`
+- باز کردن پنل جزئیات هر ویدیو
+- ارسال ویدیوی انتخاب‌شده به صف دانلود
 
-EzyTube is built with Vite, React, TypeScript, and Tauri.
+فید یوتیوب در نسخه دسکتاپ از مسیر پروکسی داخلی تائوری استفاده می‌کند. اگر برنامه را فقط در مرورگر توسعه باز کنید، ممکن است همه قابلیت‌های فید در دسترس نباشد.
+
+### آرشیو
+
+پس از پایان دانلود، خروجی‌ها در آرشیو برنامه نمایش داده می‌شوند. از این بخش می‌توانید فایل را روی سیستم خود دانلود کنید، فایل‌های قدیمی را حذف کنید یا جزئیات خروجی را ببینید.
+
+اگر فایل خروجی بزرگ باشد، ورک‌فلو آن را به ZIP چندبخشی تبدیل می‌کند:
+
+1. همه بخش‌ها را در یک پوشه دانلود کنید.
+2. فایل `.zip` را با WinRAR یا ۷-Zip باز کنید.
+3. بخش‌های `.z01`، `.z02` و بعدی هنگام استخراج به صورت خودکار وصل می‌شوند.
+
+## توسعه
+
+`CNS` با `Vite`، `React`، `TypeScript` و `Tauri` ساخته شده است.
+
+</div>
 
 ```bash
-# install frontend dependencies
+# نصب وابستگی‌های فرانت‌اند
 npm install
 
-# start the Vite dev server
+# اجرای سرور توسعه Vite
 npm run dev
 
-# type-check, build, and verify dist output
+# بررسی TypeScript، ساخت خروجی و کنترل dist/index.html
 npm run build
 
-# preview the production build
+# پیش‌نمایش خروجی production
 npm run preview
 ```
 
-There is no dedicated test script yet. Use `npm run build` as the required validation step for changes.
+<div dir="rtl" align="right">
 
-## Project Layout
+اسکریپت تست جداگانه‌ای در پروژه تعریف نشده است. برای اعتبارسنجی تغییرات، دستور `npm run build` مسیر اصلی و لازم است.
 
-- `src/` contains the frontend entry points and global styles
-- `src/components/` contains UI components for input, feeds, archive cards, modals, and diagnostics
-- `src/lib/` contains GitHub integration, archive logic, errors, logging, i18n, and helpers
-- `public/` contains static assets and local fonts
-- `src-tauri/` contains the Rust/Tauri desktop shell
-- `scripts/` contains small Node utilities used by package scripts
-- `docs/` contains implementation notes for specific app behavior
+## ساختار پروژه
 
-## Security Notes
+- `src/` شامل نقطه ورود فرانت‌اند، کامپوننت اصلی و استایل‌های سراسری است.
+- `src/components/` شامل کامپوننت‌های رابط مثل ورودی دانلود، فید، آرشیو، تنظیمات و عیب‌یابی است.
+- `src/lib/` شامل منطق گیت‌هاب، آرشیو، خطاها، لاگ‌ها، متن‌های فارسی و ابزارهای مشترک است.
+- `public/` شامل فایل‌های ثابت، فونت‌ها و آیکن برنامه است.
+- `src-tauri/` شامل پوسته دسکتاپ تائوری، تنظیمات، آیکن‌ها و کد Rust است.
+- `.github/workflows/download.yml` ورک‌فلوی دانلود و ثبت فایل‌ها در آرشیو را تعریف می‌کند.
+- `scripts/` شامل ابزارهای کوچک مورد استفاده در اسکریپت‌های npm است.
+- `docs/` شامل یادداشت‌های فنی برای رفتارهای خاص برنامه است.
+
+## نکات امنیتی
 
 > [!CAUTION]
-> GitHub tokens and YouTube cookies are sensitive credentials.
->
-> - Never commit them
-> - Never post them in issues or discussions
-> - Hide them in screenshots
-> - Revoke the GitHub token immediately if it may have leaked
-> - Refresh YouTube cookies from your own trusted browser only
+> با توکن گیت‌هاب و کوکی‌های یوتیوب مثل رمز عبور رفتار کنید.
 
-## Troubleshooting
+- توکن یا کوکی را commit نکنید.
+- فایل `cookies.txt` را در issue، discussion یا پیام عمومی قرار ندهید.
+- هنگام ارسال اسکرین‌شات، مقدار توکن و کوکی را کامل بپوشانید.
+- اگر احتمال افشای توکن وجود دارد، آن را فورا از تنظیمات گیت‌هاب revoke کنید.
+- کوکی‌ها را فقط از مرورگر مورد اعتماد خودتان خروجی بگیرید.
+- خروجی‌های دانلود و فایل‌های ساخته‌شده محلی را به مخزن اصلی برنامه اضافه نکنید.
 
-### A Download Does Not Start
+## عیب‌یابی
 
-- Check that GitHub is reachable from your network
-- Confirm the token has `repo` and `workflow` access
-- Run auto setup again if the workflow is missing
-- Refresh YouTube cookies if the failure mentions cookies, login, bot checks, or YouTube access
+### دانلود شروع نمی‌شود
 
-### Cookies Keep Failing
+- مطمئن شوید برنامه به گیت‌هاب دسترسی شبکه دارد.
+- بررسی کنید توکن دسترسی‌های `repo` و `workflow` را دارد.
+- اگر ورک‌فلو ساخته نشده یا تغییر کرده است، راه‌اندازی خودکار را دوباره اجرا کنید.
+- اگر پیام خطا به کوکی، ورود به حساب، bot check یا دسترسی یوتیوب اشاره می‌کند، کوکی تازه آپلود کنید.
 
-- Export cookies from the browser where you are actually signed in
-- Paste the complete `cookies.txt` contents
-- Avoid editing the cookie text manually
-- Export a new file if the previous one is old
+### کوکی‌ها پذیرفته نمی‌شوند
 
-### GitHub Rate Limit
+- کوکی را از مرورگری بگیرید که واقعا در آن وارد حساب یوتیوب شده‌اید.
+- محتوای کامل فایل `cookies.txt` را بدون ویرایش دستی وارد کنید.
+- اگر فایل قدیمی است، خروجی تازه بگیرید.
+- اگر چند حساب یا چند پروفایل مرورگر دارید، از پروفایل درست خروجی بگیرید.
 
-Wait a few minutes and retry. If the app keeps reporting rate limits, reduce repeated refreshes and avoid dispatching many jobs in a short time.
+### آرشیو فایل را نشان نمی‌دهد
 
-## Credits
+- چند لحظه صبر کنید و آرشیو را تازه‌سازی کنید؛ commit شدن فایل در گیت‌هاب ممکن است کمی زمان ببرد.
+- اجرای GitHub Actions همان دانلود را بررسی کنید.
+- اگر دانلود فایل بزرگ بوده، ممکن است خروجی به چند بخش ZIP تبدیل شده باشد.
+- اگر rate limit گیت‌هاب دیده می‌شود، چند دقیقه صبر کنید و درخواست‌های پشت سر هم را کمتر کنید.
 
-EzyTube is built with:
+### فید یوتیوب کار نمی‌کند
+
+- فید کامل در نسخه دسکتاپ تائوری در دسترس است.
+- اتصال شبکه و دسترسی برنامه به مسیرهای پروکسی را بررسی کنید.
+- اگر نتیجه‌ها ناقص هستند، دوباره جستجو کنید یا منبع فید را تازه‌سازی کنید.
+
+## اعتبارها
+
+این پروژه بر پایه ابزارها و کتابخانه‌های زیر ساخته شده است:
 
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- [ffmpeg](https://ffmpeg.org)
 - [Tauri](https://tauri.app)
 - [React](https://react.dev)
 - [Vite](https://vite.dev)
+- [TypeScript](https://www.typescriptlang.org)
 - [Tailwind CSS](https://tailwindcss.com)
 - [Vazirmatn](https://github.com/rastikerdar/vazirmatn)
 - [JetBrains Mono](https://www.jetbrains.com/lp/mono/)
 - [Lucide](https://lucide.dev)
 
-It also builds on the broader idea of using GitHub Actions as a personal media worker and archive pipeline.
+ایده اصلی برنامه استفاده از GitHub Actions به عنوان یک worker شخصی برای دانلود و نگهداری آرشیو رسانه است.
 
-## License
+## مجوز
 
-This project is released under the [MIT License](LICENSE).
+این پروژه تحت مجوز [MIT](LICENSE) منتشر شده است.
+
+</div>
